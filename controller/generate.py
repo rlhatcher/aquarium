@@ -12,29 +12,30 @@ pin_4 = 27
 
 # These are effectively shared memory for state management
 display_page = pin_1  # display page 1 by default
-backlight_on = True  # set backlight on by default
+backlight = 1000  # set backlight to brightest by default
 
 
 def button_callback(channel):
     print(str(channel) + "Button pressed")
 
-    # we use button 4 to toggle the backlight
+    # we use button 4 to set the backlight level
     if channel == pin_4:
-        global backlight_on
-        backlight_on = not backlight_on
-        backlight(backlight_on)
+        global backlight
+        if backlight == 0:
+            backlight = 1000
+        else:
+            backlight -= 100
+
     # otherwise just remember the page to display
-    else:    
+    else:
         global display_page
         display_page = channel
 
 
-def backlight(light):
-    print("turning backlight " + str(light))
-    if light:
-        system("gpio -g pwm 18 1000")
-    else:
-        system("gpio -g pwm 18 0")
+def backlight(level):
+    print("turning backlight " + str(level))
+    command = "gpio -g pwm 18 " + str(level)
+    system(command)
 
 
 def make_pages(temp):
@@ -63,7 +64,7 @@ def make_pages(temp):
 
 
 def display(page):
-    command = "sudo fbi -T 2 -d /dev/fb1 -noverbose -a display" + str(page) + ".jpg" 
+    command = "sudo fbi -T 2 -d /dev/fb1 -noverbose -a display" + str(page) + ".jpg"
     system(command)
 
 
@@ -95,4 +96,3 @@ while True:
 
 
 GPIO.cleanup()  # Clean up
-
