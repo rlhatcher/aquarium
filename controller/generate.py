@@ -10,7 +10,8 @@ pin_2 = 22
 pin_3 = 23
 pin_4 = 27
 
-# These are effectively shared memory for state management
+# These are shared memory locations for state management
+# used by the button callback handler to write
 display_page = pin_1  # display page 1 by default
 backlight = 1000  # set backlight to brightest by default
 
@@ -38,7 +39,7 @@ def backlight(level):
     system(command)
 
 
-def make_pages(temp):
+def render_temp(temp):
 
     # get a font
     fnt_file = "/usr/share/fonts/truetype/noto/NotoMono-Regular.ttf"
@@ -60,12 +61,14 @@ def make_pages(temp):
         d = ImageDraw.Draw(out)
         d.multiline_text((10, 10), str(temp) + "C\nCritical", font=fnt, fill=(0, 0, 0))
 
-    out.save("display" + str(pin_1) + "jpg", "JPEG")
 
+def make_page(page):
 
-def display(page):
-    command = "sudo fbi -T 2 -d /dev/fb1 -noverbose -a display" + str(page) + ".jpg"
-    system(command)
+    if page == pin_1:
+        temp = 23  # really call for temp here
+        out = render_temp(temp)
+        out.save("display" + str(pin_1) + "jpg", "JPEG")
+        system("sudo fbi -T 2 -d /dev/fb1 -noverbose -a display" + str(pin_1) + ".jpg")
 
 
 GPIO.setwarnings(False)  # Ignore warning for now
@@ -87,12 +90,7 @@ GPIO.add_event_detect(pin_4, GPIO.FALLING, callback=button_callback)
 system("gpio -g mode 18 pwm")
 
 while True:
-    make_pages(23)
-    display(display_page)
+    make_page(display_page)
     time.sleep(1)
-    make_pages(16)
-    display(display_page)
-    time.sleep(1)
-
 
 GPIO.cleanup()  # Clean up
