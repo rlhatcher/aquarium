@@ -1,8 +1,6 @@
-from os import system
-from PIL import Image, ImageDraw, ImageFont
-
+import subprocess
 import RPi.GPIO as GPIO
-import time
+from time import sleep
 
 # map our pins to the hardware
 pin_1 = 17
@@ -10,7 +8,8 @@ pin_2 = 22
 pin_3 = 23
 pin_4 = 27
 
-# These are effectively shared memory for state management
+# These are shared memory locations for state management
+# used by the button callback handler to write
 display_page = pin_1  # display page 1 by default
 backlight = 1000  # set backlight to brightest by default
 
@@ -24,48 +23,46 @@ def button_callback(channel):
         if backlight == 0:
             backlight = 1000
         else:
-            backlight -= 100
-
+            backlight -= 200
+        subprocess.run(["gpio", "-g", "pwm", "18", str(backlight)])
     # otherwise just remember the page to display
     else:
         global display_page
         display_page = channel
 
 
-def backlight(level):
-    print("turning backlight " + str(level))
-    command = "gpio -g pwm 18 " + str(level)
-    system(command)
-
-
-def make_pages(temp):
-
-    # get a font
-    fnt_file = "/usr/share/fonts/truetype/noto/NotoMono-Regular.ttf"
-    fnt = ImageFont.truetype(fnt_file, 30)
+def render_temp(temp):
 
     if temp >= 23 and temp <= 25:
-        out = Image.new("RGB", (320, 240), "DarkGreen")  # green background
-        d = ImageDraw.Draw(out)
-        message = str(temp) + "C\nSafe"
-        d.multiline_text((10, 10), message, font=fnt, fill=(0, 0, 0))
+        bg_color = "DarkGreen"
+        message = "Probe 1: " + str(temp) + "C\n\n" \
+                  "Probe 2: " + str(temp) + "C\n"
 
     elif (temp >= 21 and temp < 23) or (temp <= 27 and temp > 25):
-        out = Image.new("RGB", (150, 100), (100, 100, 0))  # amber background
-        d = ImageDraw.Draw(out)
-        d.multiline_text((10, 10), str(temp) + "C\nWarn", font=fnt, fill=(0, 0, 0))
+        bg_color = "DarkOrange"
+        message = str(temp) + "C\nWarn"
 
     else:
-        out = Image.new("RGB", (150, 100), (100, 0, 0))  # red background
-        d = ImageDraw.Draw(out)
-        d.multiline_text((10, 10), str(temp) + "C\nCritical", font=fnt, fill=(0, 0, 0))
+        bg_color = "DarkRed"
+        message = str(temp) + "C\nCritical"
 
-    out.save("display" + str(pin_1) + "jpg", "JPEG")
+    subprocess.run(["convert", "-background", bg_color,
+                    "-size", "320x240",
+                    "-fill", "black",
+                    "-pointsize", "48",
+                    "-font", "URW-Gothic-L-Demi-Oblique",
+                    "label:" + message,
+                    "display" + str(pin_1) + ".jpg"])
+    subprocess.run(["sudo", "fbi", "-T", "2", "-d", "/dev/fb1", "-noverbose",
+                   "-a", "display" + str(pin_1) + ".jpg"],
+                   stdout=subprocess.DEVNULL)
 
 
-def display(page):
-    command = "sudo fbi -T 2 -d /dev/fb1 -noverbose -a display" + str(page) + ".jpg"
-    system(command)
+def make_page(page):
+
+    if page == pin_1:
+        temp = 23  # really call for temp here
+        render_temp(temp)
 
 
 GPIO.setwarnings(False)  # Ignore warning for now
@@ -84,15 +81,10 @@ GPIO.add_event_detect(pin_3, GPIO.FALLING, callback=button_callback)
 GPIO.add_event_detect(pin_4, GPIO.FALLING, callback=button_callback)
 
 # init pwm for the backlight control
-system("gpio -g mode 18 pwm")
+subprocess.run(["gpio", "-g", "mode", "18", "pwm"])
 
 while True:
-    make_pages(23)
-    display(display_page)
-    time.sleep(1)
-    make_pages(16)
-    display(display_page)
-    time.sleep(1)
-
+    make_page(display_page)
+    sleep(2)
 
 GPIO.cleanup()  # Clean up
