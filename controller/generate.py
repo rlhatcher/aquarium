@@ -1,4 +1,5 @@
 import subprocess
+import random
 import RPi.GPIO as GPIO
 from time import sleep
 
@@ -34,17 +35,19 @@ def button_callback(channel):
 def render_temp(temp):
 
     if temp >= 23 and temp <= 25:
-        bg_color = "DarkGreen"
+        bg_color = "Green"
         message = "Probe 1: " + str(temp) + "C\n\n" \
                   "Probe 2: " + str(temp) + "C\n"
 
     elif (temp >= 21 and temp < 23) or (temp <= 27 and temp > 25):
         bg_color = "DarkOrange"
-        message = str(temp) + "C\nWarn"
+        message = "Probe 1: " + str(temp) + "C\n\n" \
+                  "Probe 2: " + str(temp) + "C\n"
 
     else:
-        bg_color = "DarkRed"
-        message = str(temp) + "C\nCritical"
+        bg_color = "Red"
+        message = "Probe 1: " + str(temp) + "C\n\n" \
+                  "Probe 2: " + str(temp) + "C\n"
 
     subprocess.run(["convert", "-background", bg_color,
                     "-size", "320x240",
@@ -61,7 +64,7 @@ def render_temp(temp):
 def make_page(page):
 
     if page == pin_1:
-        temp = 23  # really call for temp here
+        temp = random(18, 31)
         render_temp(temp)
 
 
