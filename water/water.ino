@@ -31,9 +31,9 @@ int productFlowPin = 2;
 int wasteFlowPin = 3;
 
 buttonCtrl buttons[NUM_BUTTONS] = {
-  {"Feed", 13, false}, 
-  {"Purge", 12, true}, 
-  {"Pump", 11, false}
+    {"Feed", 6, false},
+    {"Purge", 5, true},
+    {"Pump", 7, false}
 };
 
 volatile int productFlowCounter = 0;
@@ -44,24 +44,23 @@ sensorCtrl sensors[NUM_SENSORS] = {
   {"Waste  ", 3, &wasteFlowCounter}
 };
 
-void productFlowInterrupt() {
-  productFlowCounter++;
-}
+void productFlowInterrupt() { productFlowCounter++; }
 
-void wasteFlowInterrupt() {
-  wasteFlowCounter++; 
-}
+void wasteFlowInterrupt() { wasteFlowCounter++; }
 
 void setup() {
   Serial.begin(115200);
 
   for (int i = 0; i < NUM_BUTTONS; i++) {
     pinMode(buttons[i].pin, OUTPUT);
+    digitalWrite(buttons[i].pin, buttons[i].state);
   }
 
   // Attach the interrupts to the flow sensor pins
-  attachInterrupt(digitalPinToInterrupt(productFlowPin), productFlowInterrupt, RISING);
-  attachInterrupt(digitalPinToInterrupt(wasteFlowPin), wasteFlowInterrupt, RISING);
+  attachInterrupt(digitalPinToInterrupt(productFlowPin), productFlowInterrupt,
+                  RISING);
+  attachInterrupt(digitalPinToInterrupt(wasteFlowPin), wasteFlowInterrupt,
+                  RISING);
 
   // Rotate the screen 90 degrees
   tft.begin();
@@ -75,23 +74,22 @@ void setup() {
     Serial.println("Touchscreen started.");
   }
   drawButtons();
- 
 }
 
 void drawButtons(void) {
-
   buttonWidth = tft.width() / NUM_BUTTONS;
   buttonTop = tft.height() - buttonHeight;
-  
+
   tft.setTextSize(3);
 
   for (int i = 0; i < NUM_BUTTONS; i++) {
-
     int padding = (buttons[i].label.length() == 4) ? 20 : 10;
     uint16_t color = buttons[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
 
-    tft.drawRect(i * buttonWidth, buttonTop, buttonWidth, buttonHeight, ILI9341_WHITE);
-    tft.fillRect(i * buttonWidth + 1, buttonTop + 1, buttonWidth - 1, buttonHeight - 1, color);
+    tft.drawRect(i * buttonWidth, buttonTop, buttonWidth, buttonHeight,
+                 ILI9341_WHITE);
+    tft.fillRect(i * buttonWidth + 1, buttonTop + 1, buttonWidth - 1,
+                 buttonHeight - 1, color);
     tft.setCursor(i * buttonWidth + padding, buttonTop + 20);
     tft.setTextColor(ILI9341_WHITE, color);
     tft.println(buttons[i].label);
@@ -123,7 +121,6 @@ void loop() {
 
   // Check for touch events and handle them
   if (cts.touched()) {
-
     TS_Point p = cts.getPoint();
     // rotate coordinate system
     int y = p.x;
@@ -136,5 +133,4 @@ void loop() {
       drawButtons();
     }
   }
-
 }
