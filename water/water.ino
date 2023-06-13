@@ -2,33 +2,15 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
 
-#define TFT_CS 10
-#define TFT_DC 9
-
-#define NUM_BUTTONS 3
-#define NUM_SENSORS 2
-
-typedef struct buttonCtrl {
-  String label;
-  int pin;
-  boolean state;
-};
-
-typedef struct sensorCtrl {
-  String label;
-  int pin;
-  volatile int* flowCounter;
-};
+#include "water.h"
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_FT6206 cts = Adafruit_FT6206();
 
+// Push button control setup
 int buttonHeight = 60;
-int buttonWidth;
-int buttonTop;
-
-int productFlowPin = 2;
-int wasteFlowPin = 3;
+int buttonWidth = 0;
+int buttonTop = 0;
 
 buttonCtrl buttons[NUM_BUTTONS] = {
     {"Feed", 6, false},
@@ -36,17 +18,25 @@ buttonCtrl buttons[NUM_BUTTONS] = {
     {"Pump", 7, false}
 };
 
-volatile int productFlowCounter = 0;
-volatile int wasteFlowCounter = 0;
+// Flow sensor control setup
+int productFlowPin = 2;
+int wasteFlowPin = 3;
+
+volatile unsigned long productFlowCounter = 0;
+volatile unsigned long wasteFlowCounter = 0;
 
 sensorCtrl sensors[NUM_SENSORS] = {
-  {"Product", 2, &productFlowCounter},
-  {"Waste  ", 3, &wasteFlowCounter}
+  {"Product", &productFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0},
+  {"Waste  ", &wasteFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0}
 };
 
-void productFlowInterrupt() { productFlowCounter++; }
+void productFlowInterrupt() {
+  productFlowCounter++;
+}
 
-void wasteFlowInterrupt() { wasteFlowCounter++; }
+void wasteFlowInterrupt() {
+  wasteFlowCounter++;
+}
 
 void setup() {
   Serial.begin(115200);
@@ -57,28 +47,24 @@ void setup() {
   }
 
   // Attach the interrupts to the flow sensor pins
-  attachInterrupt(digitalPinToInterrupt(productFlowPin), productFlowInterrupt,
-                  RISING);
-  attachInterrupt(digitalPinToInterrupt(wasteFlowPin), wasteFlowInterrupt,
-                  RISING);
+  attachInterrupt(digitalPinToInterrupt(productFlowPin), productFlowInterrupt, RISING);
+  attachInterrupt(digitalPinToInterrupt(wasteFlowPin), wasteFlowInterrupt, RISING);
 
-  // Rotate the screen 90 degrees
+  // Start the TFT and rotate 90 degrees
   tft.begin();
   tft.setRotation(3);
+  buttonWidth = tft.width() / NUM_BUTTONS;
+  buttonTop = tft.height() - buttonHeight;
+
   tft.fillScreen(ILI9341_BLACK);
 
-  // Pass in 'sensitivity' coefficient
-  if (!cts.begin(40)) {
-    Serial.println("Unable to start touchscreen.");
-  } else {
-    Serial.println("Touchscreen started.");
-  }
+  // Start the touch screen with 'sensitivity' coefficient
+  Serial.println((cts.begin(40)) ? "Touchscreen started." : "Unable to start touchscreen.");
+
   drawButtons();
 }
 
 void drawButtons(void) {
-  buttonWidth = tft.width() / NUM_BUTTONS;
-  buttonTop = tft.height() - buttonHeight;
 
   tft.setTextSize(3);
 
@@ -86,46 +72,78 @@ void drawButtons(void) {
     int padding = (buttons[i].label.length() == 4) ? 20 : 10;
     uint16_t color = buttons[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
 
-    tft.drawRect(i * buttonWidth, buttonTop, buttonWidth, buttonHeight,
-                 ILI9341_WHITE);
-    tft.fillRect(i * buttonWidth + 1, buttonTop + 1, buttonWidth - 1,
-                 buttonHeight - 1, color);
+    tft.drawRect(i * buttonWidth, buttonTop, buttonWidth, buttonHeight, ILI9341_WHITE);
+    tft.fillRect(i * buttonWidth + 1, buttonTop + 1, buttonWidth - 1, buttonHeight - 1, color);
     tft.setCursor(i * buttonWidth + padding, buttonTop + 20);
     tft.setTextColor(ILI9341_WHITE, color);
     tft.println(buttons[i].label);
   }
-  tft.setFont();
+}
+
+boolean readSensors(void) {
+
+  boolean changed = false;
+
+  for (int i = 0; i < NUM_SENSORS; i++) {
+
+    // Disable the interrupts while we read the counter value
+    noInterrupts();
+    unsigned long pulseCount = *sensors[i].pulseCount;
+    interrupts();
+
+    unsigned long now = millis();
+    unsigned long deltaCount = pulseCount - sensors[i].oldPulseCount;
+    unsigned long deltaTime = now - sensors[i].lastMillis;
+
+    if (deltaTime >= 1000) {
+      sensors[i].flowRate = ((deltaCount / (float)deltaTime) * 60000) / 5880.0;
+      sensors[i].flowRates[sensors[i].bufferIndex] = sensors[i].flowRate;
+      sensors[i].flowRateSum += sensors[i].flowRate;
+      sensors[i].averageFlowRate = sensors[i].flowRateSum / AVERAGE_PERIOD;
+      sensors[i].bufferIndex = (sensors[i].bufferIndex + 1) % AVERAGE_PERIOD;
+
+      sensors[i].oldPulseCount = pulseCount;
+      sensors[i].lastMillis = now;
+
+      changed = true;
+    }
+    
+  }
+
+  return changed;
 }
 
 void loop() {
-  // Disable the interrupts while we read the counter values
-  noInterrupts();
-  int productFlowCount = productFlowCounter;
-  int wasteFlowCount = wasteFlowCounter;
-  interrupts();
+  
+  if (readSensors()) {
 
-  // Convert the counter values to flow rates
-  float productFlowRate = productFlowCount / 5880.0;
-  float wasteFlowRate = wasteFlowCount / 5880.0;
+    // Display the sensor readings if they've changed
+    tft.setCursor(0, 0);
+    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+    tft.setTextSize(3);
 
-  // Display the sensor readings
-  tft.setCursor(0, 0);
-  tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-  tft.setTextSize(3);
-  for (int i = 0; i < NUM_SENSORS; i++) {
-    tft.print(sensors[i].label);
-    tft.print("  ");
-    tft.print(*sensors[i].flowCounter / 5.88);
-    tft.println(" mL");
+    for (int i = 0; i < NUM_SENSORS; i++) {
+      tft.print(sensors[i].label);
+      tft.print("  ");
+      tft.print(sensors[i].flowRate, 2);
+      tft.println(" L/min");
+      tft.print("Avg: ");
+      tft.print(sensors[i].averageFlowRate, 2);
+      tft.println(" L/min");
+    }
+
   }
 
   // Check for touch events and handle them
   if (cts.touched()) {
+
     TS_Point p = cts.getPoint();
-    // rotate coordinate system
+
+    // flip coordinate system to match display
     int y = p.x;
     int x = p.y;
 
+    // bottom row buttons
     if (y < buttonHeight) {
       int index = x / buttonWidth;
       buttons[index].state = !buttons[index].state;
