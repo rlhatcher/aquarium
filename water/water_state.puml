@@ -1,0 +1,13 @@
+@startuml water state
+
+[*] -> standby
+standby -> bringup
+bringup -> running
+running -> tankfull
+tankfull -> running
+tankfull -> standby
+standby -> lowrun
+lowrun -> running
+lowrun -> standby
+
+@enduml
