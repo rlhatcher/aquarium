@@ -22,6 +22,7 @@ boolean t_rinse_stop = false;
 boolean t_run = false;
 boolean touch_play = false;
 boolean touch_pause = false;
+boolean start = false;
 
 // Timer event counters
 unsigned int t_prime_millis = 0;
@@ -45,7 +46,7 @@ buttonCtrl controls[NUM_CONTROLS] = {
     {"Feed", 6, false}, {"Purge", 5, true}, {"Pump", 7, false}};
 
 // Flow sensor control setup
-int productFlowPin = 2;
+int prodFlowPin = 2;
 int wasteFlowPin = 3;
 
 volatile unsigned long productFlowCounter = 0;
@@ -82,9 +83,9 @@ state stateNow = STANDBY;
 state stateLast = STANDBY;
 boolean stateChanged = false;
 
-void productFlowInterrupt() { productFlowCounter++; }
+void prodFlowIrq() { productFlowCounter++; }
 
-void wasteFlowInterrupt() { wasteFlowCounter++; }
+void wasteFlowIrq() { wasteFlowCounter++; }
 
 // Board setup
 void setup() {
@@ -96,10 +97,8 @@ void setup() {
   }
 
   // Attach the interrupts to the flow sensor pins
-  attachInterrupt(digitalPinToInterrupt(productFlowPin), productFlowInterrupt,
-                  RISING);
-  attachInterrupt(digitalPinToInterrupt(wasteFlowPin), wasteFlowInterrupt,
-                  RISING);
+  attachInterrupt(digitalPinToInterrupt(prodFlowPin), prodFlowIrq, RISING);
+  attachInterrupt(digitalPinToInterrupt(wasteFlowPin), wasteFlowIrq, RISING);
 
   // Start the TFT and rotate 90 degrees
   tft.begin();
@@ -110,27 +109,9 @@ void setup() {
   tft.fillScreen(ILI9341_BLACK);
 
   // Start the touch screen with 'sensitivity' coefficient
-  Serial.println((cts.begin(40)) ? "Touchscreen started."
-                                 : "Unable to start touchscreen.");
+  Serial.println((cts.begin(40)) ? "TS started" : "TS failed");
 
-  drawButtons();
-}
-
-void drawButtons(void) {
-  tft.setTextSize(3);
-
-  for (int i = 0; i < NUM_CONTROLS; i++) {
-    int padding = (controls[i].label.length() == 4) ? 20 : 10;
-    uint16_t color = controls[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
-
-    tft.drawRoundRect(i * buttonWidth, buttonTop, buttonWidth, buttonHeight, 10,
-                      ILI9341_WHITE);
-    tft.fillRoundRect(i * buttonWidth + 1, buttonTop + 1, buttonWidth - 2,
-                      buttonHeight - 2, 10, color);
-    tft.setCursor(i * buttonWidth + padding, buttonTop + 10);
-    tft.setTextColor(ILI9341_WHITE, color);
-    tft.println(controls[i].label);
-  }
+  start = true;  // send our first event to start the state machine
 }
 
 boolean readSensors(void) {
@@ -164,54 +145,70 @@ boolean readSensors(void) {
 
 // Perform state transitions
 void processEvents(void) {
+  if (start) {
+    stateLast = stateNow;
+    stateNow = STANDBY;
+    stateChanged = true;
+    start = false;
+  }
   if (t_prime) {
     stateLast = stateNow;
     stateNow = RINSE;
-    stateChanged = stateLast != stateNow;
+    stateChanged = true;
     t_prime = false;
   }
   if (t_rinse_start) {
     stateLast = stateNow;
     stateNow = RUNNING;
-    stateChanged = stateLast != stateNow;
+    stateChanged = true;
     t_rinse_start = false;
   }
   if (t_rinse_stop) {
     stateLast = stateNow;
     stateNow = STANDBY;
-    stateChanged = stateLast != stateNow;
+    stateChanged = true;
     t_rinse_stop = false;
   }
   if (t_run) {
     stateLast = stateNow;
     stateNow = RINSE;
-    stateChanged = stateLast != stateNow;
+    stateChanged = true;
     t_run = false;
   }
   if (touch_play) {
     stateLast = stateNow;
     stateNow = PRIME;
-    stateChanged = stateLast != stateNow;
+    stateChanged = true;
     touch_play = false;
   }
   if (touch_pause) {
     stateLast = stateNow;
     stateNow = RINSE;
-    stateChanged = stateLast != stateNow;
+    stateChanged = true;
     touch_pause = false;
   }
 }
 
 void drawStatus(uint16_t fg_colour, uint16_t bg_colour, String status) {
-  if (stateLast != stateNow) {
-    tft.fillRect(0, 150, tft.width(), tft.height() - 189, bg_colour);
+  if (stateChanged) {
+    tft.setTextSize(3);
+    tft.fillRoundRect(0, 150, tft.width(), 48, 5, bg_colour);
+    for (int i = 0; i < NUM_CONTROLS; i++) {
+      int padding = (controls[i].label.length() == 4) ? 20 : 10;
+      uint16_t color = controls[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
+      tft.drawRoundRect(i * buttonWidth, buttonTop, buttonWidth, buttonHeight,
+                        10, ILI9341_WHITE);
+      tft.fillRoundRect(i * buttonWidth + 1, buttonTop + 1, buttonWidth - 2,
+                        buttonHeight - 2, 10, color);
+      tft.setCursor(i * buttonWidth + padding, buttonTop + 10);
+      tft.setTextColor(ILI9341_WHITE, color);
+      tft.println(controls[i].label);
+      digitalWrite(controls[i].pin, controls[i].state);
+    }
     tft.setCursor(10, 165);
     tft.setTextColor(fg_colour, bg_colour);
-    tft.setTextSize(3);
-    tft.print("Status ");
+    tft.print(status);
   }
-  tft.setCursor(100, 165);
-  tft.print(status);
 }
 
 void loop() {
@@ -222,20 +219,6 @@ void loop() {
 
   // Perform state transitions
   processEvents();
-
-  // Clear the status area
-  if (stateChanged) {
-    drawButtons();
-    tft.fillRect(0, 150, tft.width(), tft.height() - 189, ILI9341_DARKCYAN);
-    tft.setCursor(10, 165);
-    tft.setTextColor(ILI9341_WHITE, ILI9341_DARKCYAN);
-    tft.setTextSize(3);
-    tft.print("Status ");
-  
-    for (int i = 0; i < NUM_CONTROLS; i++) {
-      digitalWrite(controls[i].pin, controls[i].state);
-    }
-  }
 
   // Update the control settings for the current state
   controls[FEED].state = states[stateNow].feed;
@@ -299,7 +282,7 @@ void loop() {
       break;
   }
 
-
+  stateChanged = false;
 
   if (readSensors()) {
     int xpos = 0, ypos = 5, gap = 5, radius = 40;

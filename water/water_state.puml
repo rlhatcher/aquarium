@@ -25,7 +25,7 @@ state rinse {
   rinse : pump on
 }
 
-[*] --> standby
+[*] --> standby : start
 standby --> prime : touch_play
 prime --> rinse : t_prime
 rinse --> running : t_rinse_start
