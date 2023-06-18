@@ -2,33 +2,46 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
 
-#include "water.h"
+#define TFT_CS 10  // chip select pin for the TFT
+#define TFT_DC 9   // data pin for the TFT
+
+#define NUM_CONTROLS 3  // number of push buttons
+#define NUM_SENSORS 2   // number of flow sensors
+
+#define AVERAGE_PERIOD 60  // number of seconds for flow average
 
 #define ILI9341_GREY 0x2104  // Dark grey 16 bit colour
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_FT6206 cts = Adafruit_FT6206();
 
-state stateNow = STANDBY;
-state stateLast = STANDBY;
-boolean stateChanged = false;
+
 
 // Event variables
-boolean start_declined = false;
-boolean stop_declined = false;
-boolean start_accepted = false;
-boolean stop_accepted = false;
 boolean t_prime = false;
 boolean t_rinse_start = false;
 boolean t_rinse_stop = false;
 boolean t_run = false;
-boolean touch_run = false;
-boolean touch_standby = false;
+boolean touch_play = false;
+boolean touch_pause = false;
+
+// Timer event counters
+unsigned int t_prime_millis = 0;
+unsigned int t_rinse_start_millis = 0;
+unsigned int t_rinse_stop_millis = 0;
+unsigned int t_run_millis = 0;
 
 // Push button control setup
 int buttonHeight = 40;
 int buttonWidth = 0;
 int buttonTop = 0;
+
+enum control { FEED, PURGE, PUMP };
+typedef struct buttonCtrl {
+  String label;
+  int pin;
+  boolean state;
+};
 
 buttonCtrl controls[NUM_CONTROLS] = {
     {"Feed", 6, false}, {"Purge", 5, true}, {"Pump", 7, false}};
@@ -39,10 +52,35 @@ int wasteFlowPin = 3;
 
 volatile unsigned long productFlowCounter = 0;
 volatile unsigned long wasteFlowCounter = 0;
-
+typedef struct sensorCtrl {
+  String label;
+  volatile unsigned long* pulseCount;
+  unsigned long oldPulseCount;
+  unsigned long lastMillis;
+  float flowRate;
+  float averageFlowRate;
+  float flowRateSum;
+  float flowRates[AVERAGE_PERIOD];  // buffer to store flow rates for averaging
+  int bufferIndex;
+};
 sensorCtrl sensors[NUM_SENSORS] = {
     {"Product", &productFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0},
     {" Waste ", &wasteFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0}};
+
+enum state { STANDBY, RUNNING, PRIME, RINSE };
+typedef struct systemState {
+  boolean feed;
+  boolean purge;
+  boolean pump;
+};
+systemState states[4] = {{false, true, false},
+                         {true, false, true},
+                         {true, true, false},
+                         {true, true, true}};
+
+state stateNow = STANDBY;
+state stateLast = STANDBY;
+boolean stateChanged = false;
 
 void productFlowInterrupt() { productFlowCounter++; }
 
@@ -160,43 +198,6 @@ void drawState() {
 
 // Perform state transitions
 void processEvents(void) {
-  if (start_declined) {
-    if (stateNow != CONFIRM_START) {
-      Serial.println("Start declined - not in confirm start state");
-    }
-    stateLast = stateNow;
-    stateNow = STANDBY;
-    stateChanged = stateLast != stateNow;
-    start_declined = false;
-  }
-  if (start_accepted) {
-    if (stateNow != CONFIRM_START) {
-      Serial.println("Start declined - not in confirm start state");
-    }
-    stateLast = stateNow;
-    stateNow = PRIME;
-    stateChanged = stateLast != stateNow;
-    start_declined = false;
-  }
-  if (stop_declined) {
-    if (stateNow != CONFIRM_STOP) {
-      Serial.println("Stop declined - not in confirm stop state");
-    }
-    stateLast = stateNow;
-    stateNow = RUNNING;
-    stateChanged = stateLast != stateNow;
-    stop_declined = false;
-  }
-  if (stop_accepted) {
-    if (stateNow == CONFIRM_STOP) {
-      stateLast = stateNow;
-      stateNow = RINSE;
-      stateChanged = stateLast != stateNow;
-      stop_accepted = false;
-    } else {
-      Serial.println("Stop accepted - not in confirm stop state");
-    }
-  }
   if (t_prime) {
     stateLast = stateNow;
     stateNow = RINSE;
@@ -221,22 +222,21 @@ void processEvents(void) {
     stateChanged = stateLast != stateNow;
     t_run = false;
   }
-  if (touch_run) {
+  if (touch_play) {
     stateLast = stateNow;
-    stateNow = CONFIRM_STOP;
+    stateNow = PRIME;
     stateChanged = stateLast != stateNow;
-    touch_run = false;
+    touch_play = false;
   }
-  if (touch_standby) {
+  if (touch_pause) {
     stateLast = stateNow;
-    stateNow = CONFIRM_START;
+    stateNow = RINSE;
     stateChanged = stateLast != stateNow;
-    touch_standby = false;
+    touch_pause = false;
   }
 }
 
 void loop() {
-
   // touch screen variables
   int x, y;
   boolean touch = false;
@@ -251,8 +251,8 @@ void loop() {
       controls[PURGE].state = true;
       controls[PUMP].state = false;
       if (touch) {
-        if (x > 0 && x < 80 && y > 240 && y < 340) {
-          touch_standby = true;
+        if (y < 340) {
+          touch_play = true;
         }
       }
       break;
@@ -260,16 +260,39 @@ void loop() {
       controls[FEED].state = true;
       controls[PURGE].state = true;
       controls[PUMP].state = false;
+      if (stateChanged) {
+        t_prime_millis = millis();
+      } else if (millis() - t_prime_millis > 10000) {
+        t_prime = true;
+      }
       break;
     case RINSE:
       controls[FEED].state = true;
       controls[PURGE].state = true;
       controls[PUMP].state = true;
+      if (stateChanged) {
+        if (stateLast == RUNNING) {
+          t_rinse_stop_millis = millis();
+        } else {
+          t_rinse_start_millis = millis();
+        }
+      } else if (stateLast == RUNNING &&
+                 millis() - t_rinse_stop_millis > 10000) {
+        t_rinse_stop = true;
+      } else if (stateLast != RUNNING &&
+                 millis() - t_rinse_start_millis > 10000) {
+        t_rinse_start = true;
+      }
       break;
     case RUNNING:
       controls[FEED].state = true;
       controls[PURGE].state = false;
       controls[PUMP].state = true;
+      if (touch) {
+        if (y < 340) {
+          touch_pause = true;
+        }
+      }
       break;
   }
 
