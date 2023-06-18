@@ -12,6 +12,10 @@
 
 #define ILI9341_GREY 0x2104  // Dark grey 16 bit colour
 
+// Flow sensor control setup
+int prd_flow_pin = 2;
+int wst_flow_pin = 3;
+
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_FT6206 cts = Adafruit_FT6206();
 
@@ -29,11 +33,12 @@ unsigned int t_prime_millis = 0;
 unsigned int t_rinse_start_millis = 0;
 unsigned int t_rinse_stop_millis = 0;
 unsigned int t_run_millis = 0;
+unsigned int t_delay_millis = 0;
 
 // Push button control setup
-int buttonHeight = 40;
-int buttonWidth = 0;
-int buttonTop = 0;
+int btnH = 40;
+int btnW = 0;
+int btnT = 0;
 
 enum control { FEED, PURGE, PUMP };
 typedef struct buttonCtrl {
@@ -44,10 +49,6 @@ typedef struct buttonCtrl {
 
 buttonCtrl controls[NUM_CONTROLS] = {
     {"Feed", 6, false}, {"Purge", 5, true}, {"Pump", 7, false}};
-
-// Flow sensor control setup
-int prodFlowPin = 2;
-int wasteFlowPin = 3;
 
 volatile unsigned long productFlowCounter = 0;
 volatile unsigned long wasteFlowCounter = 0;
@@ -73,18 +74,18 @@ typedef struct systemState {
   boolean feed;
   boolean purge;
   boolean pump;
+  uint16_t colour;
+  state icon;
 };
-systemState states[4] = {{false, true, false},
-                         {true, false, true},
-                         {true, true, false},
-                         {true, true, true}};
-
+systemState states[4] = {{false, true, false, ILI9341_YELLOW, RUNNING},
+                         {true, false, true, ILI9341_GREEN, STANDBY},
+                         {true, true, false, ILI9341_BLUE, PRIME},
+                         {true, true, true, ILI9341_CYAN, RINSE}};
 state stateNow = STANDBY;
 state stateLast = STANDBY;
 boolean stateChanged = false;
 
 void prodFlowIrq() { productFlowCounter++; }
-
 void wasteFlowIrq() { wasteFlowCounter++; }
 
 // Board setup
@@ -97,21 +98,21 @@ void setup() {
   }
 
   // Attach the interrupts to the flow sensor pins
-  attachInterrupt(digitalPinToInterrupt(prodFlowPin), prodFlowIrq, RISING);
-  attachInterrupt(digitalPinToInterrupt(wasteFlowPin), wasteFlowIrq, RISING);
+  attachInterrupt(digitalPinToInterrupt(prd_flow_pin), prodFlowIrq, RISING);
+  attachInterrupt(digitalPinToInterrupt(wst_flow_pin), wasteFlowIrq, RISING);
 
   // Start the TFT and rotate 90 degrees
   tft.begin();
   tft.setRotation(3);
-  buttonWidth = tft.width() / NUM_CONTROLS;
-  buttonTop = tft.height() - buttonHeight;
-
   tft.fillScreen(ILI9341_BLACK);
+  btnW = tft.width() / NUM_CONTROLS;
+  btnT = tft.height() - btnH;
 
   // Start the touch screen with 'sensitivity' coefficient
   Serial.println((cts.begin(40)) ? "TS started" : "TS failed");
 
-  start = true;  // send our first event to start the state machine
+  // send our first event to start the state machine
+  start = true;
 }
 
 boolean readSensors(void) {
@@ -189,25 +190,39 @@ void processEvents(void) {
   }
 }
 
-void drawStatus(uint16_t fg_colour, uint16_t bg_colour, String status) {
+void drawStatus(uint16_t fg_colour, String status) {
   if (stateChanged) {
     tft.setTextSize(3);
-    tft.fillRoundRect(0, 150, tft.width(), 48, 5, bg_colour);
+    tft.fillRoundRect(0, 145, tft.width(), 48, 5, states[stateNow].colour);
     for (int i = 0; i < NUM_CONTROLS; i++) {
       int padding = (controls[i].label.length() == 4) ? 20 : 10;
       uint16_t color = controls[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
-      tft.drawRoundRect(i * buttonWidth, buttonTop, buttonWidth, buttonHeight,
-                        10, ILI9341_WHITE);
-      tft.fillRoundRect(i * buttonWidth + 1, buttonTop + 1, buttonWidth - 2,
-                        buttonHeight - 2, 10, color);
-      tft.setCursor(i * buttonWidth + padding, buttonTop + 10);
+      tft.drawRoundRect(i * btnW, btnT, btnW, btnH, 10, ILI9341_WHITE);
+      tft.fillRoundRect(i * btnW + 1, btnT + 1, btnW - 2, btnH - 2, 10, color);
+      tft.setCursor(i * btnW + padding, btnT + 10);
       tft.setTextColor(ILI9341_WHITE, color);
       tft.println(controls[i].label);
       digitalWrite(controls[i].pin, controls[i].state);
     }
-    tft.setCursor(10, 165);
-    tft.setTextColor(fg_colour, bg_colour);
+    tft.setCursor(10, 160);
+    tft.setTextColor(fg_colour, states[stateNow].colour);
     tft.print(status);
+  }
+}
+
+void drawControl(state theState) {
+  if (stateChanged) {
+    state icon = states[theState].icon;
+    tft.fillCircle(250, 70, 60, states[icon].colour);
+    tft.drawCircle(250, 70, 60, ILI9341_WHITE);
+    tft.drawCircle(250, 70, 59, ILI9341_BLACK);
+    if (icon == RUNNING) {
+      tft.fillTriangle(220, 110, 220, 30, 300, 70, ILI9341_BLACK);
+    }
+    if (icon == STANDBY) {
+      tft.fillRoundRect(220, 30, 20, 80, 5, ILI9341_BLACK);
+      tft.fillRoundRect(260, 30, 20, 80, 5, ILI9341_BLACK);
+    }
   }
 }
 
@@ -228,15 +243,24 @@ void loop() {
   // State specific processing
   switch (stateNow) {
     case STANDBY:
-      drawStatus(ILI9341_BLACK, ILI9341_YELLOW, "Standby");
-      if (touch) {
-        if (y < 340) {
-          touch_play = true;
+      drawStatus(ILI9341_BLACK, "Standby");
+      drawControl(stateNow);
+      if (t_delay_millis == 0) {
+        Serial.println("Entering Standby");
+        t_delay_millis = millis();
+      } else {
+        if (millis() - t_delay_millis > 500) {
+          if (touch) {
+            if (y < 340) {
+              touch_play = true;
+            }
+          }
+          t_delay_millis = 0;
         }
       }
       break;
     case PRIME:
-      drawStatus(ILI9341_BLACK, ILI9341_RED, "  Prime  ");
+      drawStatus(ILI9341_BLACK, "  Prime  ");
       if (t_prime_millis == 0) {
         Serial.println("Entering Prime");
         t_prime_millis = millis();
@@ -246,7 +270,7 @@ void loop() {
       }
       break;
     case RINSE:
-      drawStatus(ILI9341_BLACK, ILI9341_CYAN, "  Rinse  ");
+      drawStatus(ILI9341_BLACK, "  Rinse  ");
       if (stateLast == RUNNING) {
         if (t_rinse_stop_millis == 0) {
           Serial.println("Entering Rinse Stop");
@@ -270,13 +294,19 @@ void loop() {
       }
       break;
     case RUNNING:
-      Serial.println("Running");
-      drawStatus(ILI9341_BLACK, ILI9341_GREEN, " Running ");
-
-      if (touch) {
-        if (y < 340) {
-          Serial.println("Pause");
-          touch_pause = true;
+      drawStatus(ILI9341_BLACK, " Running ");
+      drawControl(stateNow);
+      if (t_delay_millis == 0) {
+        Serial.println("Entering Running");
+        t_delay_millis = millis();
+      } else {
+        if (millis() - t_delay_millis > 500) {
+          if (touch) {
+            if (y < 340) {
+              touch_pause = true;
+            }
+          }
+          t_delay_millis = 0;
         }
       }
       break;
