@@ -20,20 +20,11 @@ Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_FT6206 cts = Adafruit_FT6206();
 
 // Event variables
-boolean t_prime = false;
-boolean t_rinse_start = false;
-boolean t_rinse_stop = false;
-boolean t_run = false;
-boolean touch_play = false;
-boolean touch_pause = false;
 boolean start = false;
 
-// Timer event counters
-unsigned int t_prime_millis = 0;
-unsigned int t_rinse_start_millis = 0;
-unsigned int t_rinse_stop_millis = 0;
-unsigned int t_run_millis = 0;
-unsigned int t_delay_millis = 0;
+enum timerEvent { T_PRIME, T_RINSE_START, T_RINSE_STOP, T_RUN, T_PLAY_DELAY, T_PAUSE_DELAY };
+unsigned int timerEvents[6] = {0, 0, 0, 0, 0, 0};
+boolean transitionEvents[6] = {false, false, false, false, false, false};
 
 // Push button control setup
 int btnH = 40;
@@ -147,46 +138,46 @@ boolean readSensors(void) {
 // Perform state transitions
 void processEvents(void) {
   if (start) {
-    stateLast = stateNow;
+    stateLast = STANDBY;
     stateNow = STANDBY;
     stateChanged = true;
     start = false;
   }
-  if (t_prime) {
+  if (transitionEvents[T_PRIME]) {
     stateLast = stateNow;
     stateNow = RINSE;
     stateChanged = true;
-    t_prime = false;
+    transitionEvents[T_PRIME] = false;
   }
-  if (t_rinse_start) {
+  if (transitionEvents[T_RINSE_START]) {
     stateLast = stateNow;
     stateNow = RUNNING;
     stateChanged = true;
-    t_rinse_start = false;
+    transitionEvents[T_RINSE_START] = false;
   }
-  if (t_rinse_stop) {
+  if (transitionEvents[T_RINSE_STOP]) {
     stateLast = stateNow;
     stateNow = STANDBY;
     stateChanged = true;
-    t_rinse_stop = false;
+    transitionEvents[T_RINSE_STOP] = false;
   }
-  if (t_run) {
+  if (transitionEvents[T_RUN]) {
     stateLast = stateNow;
     stateNow = RINSE;
     stateChanged = true;
-    t_run = false;
+    transitionEvents[T_RUN] = false;
   }
-  if (touch_play) {
+  if (transitionEvents[T_PLAY_DELAY]) {
     stateLast = stateNow;
     stateNow = PRIME;
     stateChanged = true;
-    touch_play = false;
+    transitionEvents[T_PLAY_DELAY] = false;
   }
-  if (touch_pause) {
+  if (transitionEvents[T_PAUSE_DELAY]) {
     stateLast = stateNow;
     stateNow = RINSE;
     stateChanged = true;
-    touch_pause = false;
+    transitionEvents[T_PAUSE_DELAY] = false;
   }
 }
 
@@ -245,68 +236,68 @@ void loop() {
     case STANDBY:
       drawStatus(ILI9341_BLACK, "Standby");
       drawControl(stateNow);
-      if (t_delay_millis == 0) {
+      if (timerEvents[T_PLAY_DELAY] == 0) {
         Serial.println("Entering Standby");
-        t_delay_millis = millis();
+        timerEvents[T_PLAY_DELAY] = millis();
       } else {
-        if (millis() - t_delay_millis > 500) {
+        if (millis() - timerEvents[T_PLAY_DELAY] > 500) {
           if (touch) {
             if (y < 340) {
-              touch_play = true;
+              transitionEvents[T_PLAY_DELAY] = true;
             }
           }
-          t_delay_millis = 0;
-        }
-      }
-      break;
-    case PRIME:
-      drawStatus(ILI9341_BLACK, "  Prime  ");
-      if (t_prime_millis == 0) {
-        Serial.println("Entering Prime");
-        t_prime_millis = millis();
-      } else if (millis() - t_prime_millis > 10000) {
-        t_prime = true;
-        t_prime_millis = 0;
-      }
-      break;
-    case RINSE:
-      drawStatus(ILI9341_BLACK, "  Rinse  ");
-      if (stateLast == RUNNING) {
-        if (t_rinse_stop_millis == 0) {
-          Serial.println("Entering Rinse Stop");
-          t_rinse_stop_millis = millis();
-        } else {
-          if (millis() - t_rinse_stop_millis > 10000) {
-            t_rinse_stop = true;
-            t_rinse_stop_millis = 0;
-          }
-        }
-      } else {
-        if (t_rinse_start_millis == 0) {
-          Serial.println("Entering Rinse Start");
-          t_rinse_start_millis = millis();
-        } else {
-          if (millis() - t_rinse_start_millis > 10000) {
-            t_rinse_start = true;
-            t_rinse_start_millis = 0;
-          }
+          timerEvents[T_PLAY_DELAY] = 0;
         }
       }
       break;
     case RUNNING:
       drawStatus(ILI9341_BLACK, " Running ");
       drawControl(stateNow);
-      if (t_delay_millis == 0) {
+      if (timerEvents[T_PAUSE_DELAY] == 0) {
         Serial.println("Entering Running");
-        t_delay_millis = millis();
+        timerEvents[T_PAUSE_DELAY] = millis();
       } else {
-        if (millis() - t_delay_millis > 500) {
+        if (millis() - timerEvents[T_PAUSE_DELAY] > 500) {
           if (touch) {
             if (y < 340) {
-              touch_pause = true;
+              transitionEvents[T_PAUSE_DELAY] = true;
             }
           }
-          t_delay_millis = 0;
+          timerEvents[T_PAUSE_DELAY] = 0;
+        }
+      }
+      break;
+    case PRIME:
+      drawStatus(ILI9341_BLACK, "  Prime  ");
+      if (timerEvents[T_PRIME] == 0) {
+        Serial.println("Entering Prime");
+        timerEvents[T_PRIME] = millis();
+      } else if (millis() - timerEvents[T_PRIME] > 10000) {
+        transitionEvents[T_PRIME]= true;
+        timerEvents[T_PRIME] = 0;
+      }
+      break;
+    case RINSE:
+      drawStatus(ILI9341_BLACK, "  Rinse  ");
+      if (stateLast == RUNNING) {
+        if (timerEvents[T_RINSE_STOP] == 0) {
+          Serial.println("Entering Rinse Stop");
+          timerEvents[T_RINSE_STOP] = millis();
+        } else {
+          if (millis() - timerEvents[T_RINSE_STOP] > 10000) {
+            transitionEvents[T_RINSE_STOP] = true;
+            timerEvents[T_RINSE_STOP] = 0;
+          }
+        }
+      } else {
+        if (timerEvents[T_RINSE_START] == 0) {
+          Serial.println("Entering Rinse Start");
+          timerEvents[T_RINSE_START] = millis();
+        } else {
+          if (millis() - timerEvents[T_RINSE_START] > 10000) {
+            transitionEvents[T_RINSE_START] = true;
+            timerEvents[T_RINSE_START] = 0;
+          }
         }
       }
       break;
