@@ -15,8 +15,6 @@
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_FT6206 cts = Adafruit_FT6206();
 
-
-
 // Event variables
 boolean t_prime = false;
 boolean t_rinse_start = false;
@@ -52,9 +50,10 @@ int wasteFlowPin = 3;
 
 volatile unsigned long productFlowCounter = 0;
 volatile unsigned long wasteFlowCounter = 0;
+
 typedef struct sensorCtrl {
   String label;
-  volatile unsigned long* pulseCount;
+  volatile unsigned long *pulseCount;
   unsigned long oldPulseCount;
   unsigned long lastMillis;
   float flowRate;
@@ -63,6 +62,7 @@ typedef struct sensorCtrl {
   float flowRates[AVERAGE_PERIOD];  // buffer to store flow rates for averaging
   int bufferIndex;
 };
+
 sensorCtrl sensors[NUM_SENSORS] = {
     {"Product", &productFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0},
     {" Waste ", &wasteFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0}};
@@ -113,7 +113,6 @@ void setup() {
   Serial.println((cts.begin(40)) ? "Touchscreen started."
                                  : "Unable to start touchscreen.");
 
-  drawState();
   drawButtons();
 }
 
@@ -163,39 +162,6 @@ boolean readSensors(void) {
   return changed;
 }
 
-// Display the status
-void drawState() {
-  tft.fillRect(0, 150, tft.width(), tft.height() - 189, ILI9341_DARKCYAN);
-
-  tft.setCursor(10, 165);
-  tft.setTextColor(ILI9341_WHITE, ILI9341_DARKCYAN);
-  tft.setTextSize(3);
-  tft.print("Status ");
-
-  switch (stateNow) {
-    case STANDBY:
-      tft.setTextColor(ILI9341_BLACK, ILI9341_YELLOW);
-      tft.print(" Standby ");
-      tft.fillRoundRect(180, 240, 80, 100, 10, ILI9341_WHITE);
-      break;
-    case RUNNING:
-      tft.setTextColor(ILI9341_BLACK, ILI9341_GREEN);
-      tft.print(" Running ");
-    case PRIME:
-      tft.setTextColor(ILI9341_BLACK, ILI9341_RED);
-      tft.print("  Fault  ");
-    case RINSE:
-      tft.setTextColor(ILI9341_BLACK, ILI9341_CYAN);
-      tft.print("  Rinse  ");
-
-    default:
-      break;
-  }
-
-  tft.setTextColor(ILI9341_WHITE, ILI9341_DARKCYAN);
-  tft.println(" ");
-}
-
 // Perform state transitions
 void processEvents(void) {
   if (t_prime) {
@@ -236,6 +202,18 @@ void processEvents(void) {
   }
 }
 
+void drawStatus(uint16_t fg_colour, uint16_t bg_colour, String status) {
+  if (stateLast != stateNow) {
+    tft.fillRect(0, 150, tft.width(), tft.height() - 189, bg_colour);
+    tft.setCursor(10, 165);
+    tft.setTextColor(fg_colour, bg_colour);
+    tft.setTextSize(3);
+    tft.print("Status ");
+  }
+  tft.setCursor(100, 165);
+  tft.print(status);
+}
+
 void loop() {
   // touch screen variables
   int x, y;
@@ -245,11 +223,29 @@ void loop() {
   // Perform state transitions
   processEvents();
 
+  // Clear the status area
+  if (stateChanged) {
+    drawButtons();
+    tft.fillRect(0, 150, tft.width(), tft.height() - 189, ILI9341_DARKCYAN);
+    tft.setCursor(10, 165);
+    tft.setTextColor(ILI9341_WHITE, ILI9341_DARKCYAN);
+    tft.setTextSize(3);
+    tft.print("Status ");
+  
+    for (int i = 0; i < NUM_CONTROLS; i++) {
+      digitalWrite(controls[i].pin, controls[i].state);
+    }
+  }
+
+  // Update the control settings for the current state
+  controls[FEED].state = states[stateNow].feed;
+  controls[PURGE].state = states[stateNow].purge;
+  controls[PUMP].state = states[stateNow].pump;
+
+  // State specific processing
   switch (stateNow) {
     case STANDBY:
-      controls[FEED].state = false;
-      controls[PURGE].state = true;
-      controls[PUMP].state = false;
+      drawStatus(ILI9341_BLACK, ILI9341_YELLOW, "Standby");
       if (touch) {
         if (y < 340) {
           touch_play = true;
@@ -257,53 +253,53 @@ void loop() {
       }
       break;
     case PRIME:
-      controls[FEED].state = true;
-      controls[PURGE].state = true;
-      controls[PUMP].state = false;
-      if (stateChanged) {
+      drawStatus(ILI9341_BLACK, ILI9341_RED, "  Prime  ");
+      if (t_prime_millis == 0) {
+        Serial.println("Entering Prime");
         t_prime_millis = millis();
       } else if (millis() - t_prime_millis > 10000) {
         t_prime = true;
+        t_prime_millis = 0;
       }
       break;
     case RINSE:
-      controls[FEED].state = true;
-      controls[PURGE].state = true;
-      controls[PUMP].state = true;
-      if (stateChanged) {
-        if (stateLast == RUNNING) {
+      drawStatus(ILI9341_BLACK, ILI9341_CYAN, "  Rinse  ");
+      if (stateLast == RUNNING) {
+        if (t_rinse_stop_millis == 0) {
+          Serial.println("Entering Rinse Stop");
           t_rinse_stop_millis = millis();
         } else {
-          t_rinse_start_millis = millis();
+          if (millis() - t_rinse_stop_millis > 10000) {
+            t_rinse_stop = true;
+            t_rinse_stop_millis = 0;
+          }
         }
-      } else if (stateLast == RUNNING &&
-                 millis() - t_rinse_stop_millis > 10000) {
-        t_rinse_stop = true;
-      } else if (stateLast != RUNNING &&
-                 millis() - t_rinse_start_millis > 10000) {
-        t_rinse_start = true;
+      } else {
+        if (t_rinse_start_millis == 0) {
+          Serial.println("Entering Rinse Start");
+          t_rinse_start_millis = millis();
+        } else {
+          if (millis() - t_rinse_start_millis > 10000) {
+            t_rinse_start = true;
+            t_rinse_start_millis = 0;
+          }
+        }
       }
       break;
     case RUNNING:
-      controls[FEED].state = true;
-      controls[PURGE].state = false;
-      controls[PUMP].state = true;
+      Serial.println("Running");
+      drawStatus(ILI9341_BLACK, ILI9341_GREEN, " Running ");
+
       if (touch) {
         if (y < 340) {
+          Serial.println("Pause");
           touch_pause = true;
         }
       }
       break;
   }
 
-  if (stateChanged) {
-    for (int i = 0; i < NUM_CONTROLS; i++) {
-      digitalWrite(controls[i].pin, controls[i].state);
-    }
-    drawState();
-    drawButtons();
-    stateChanged = false;
-  }
+
 
   if (readSensors()) {
     int xpos = 0, ypos = 5, gap = 5, radius = 40;
@@ -321,15 +317,15 @@ void loop() {
 }
 
 boolean getTouch(int *x, int *y) {
-  if (!cts.touched()) return false;
-
-  TS_Point p = cts.getPoint();
-
-  // flip coordinate system to match display
-  *y = p.x;
-  *x = p.y;
-
-  return true;
+  if (cts.touched()) {
+    TS_Point p = cts.getPoint();
+    // flip coordinate system to match display
+    *y = p.x;
+    *x = p.y;
+    return true;
+  } else {
+    return false;
+  }
 }
 
 int ringMeter(int value, int vmin, int vmax, int x, int y, int r, char *units) {
@@ -368,8 +364,7 @@ int ringMeter(int value, int vmin, int vmax, int x, int y, int r, char *units) {
       tft.fillTriangle(x0, y0, x1, y1, x2, y2, colour);
       tft.fillTriangle(x1, y1, x2, y2, x3, y3, colour);
       text_colour = colour;  // Save the last colour drawn
-    } else                   // Fill in blank segments
-    {
+    } else {
       tft.fillTriangle(x0, y0, x1, y1, x2, y2, ILI9341_GREY);
       tft.fillTriangle(x1, y1, x2, y2, x3, y3, ILI9341_GREY);
     }
