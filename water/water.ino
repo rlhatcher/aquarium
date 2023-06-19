@@ -44,7 +44,7 @@ buttonCtrl controls[NUM_CONTROLS] = {
 volatile unsigned long productFlowCounter = 0;
 volatile unsigned long wasteFlowCounter = 0;
 
-typedef struct sensorCtrl {
+typedef struct sensor {
   String label;
   volatile unsigned long *pulseCount;
   unsigned long oldPulseCount;
@@ -56,7 +56,7 @@ typedef struct sensorCtrl {
   int bufferIndex;
 };
 
-sensorCtrl sensors[NUM_SENSORS] = {
+sensor sensors[NUM_SENSORS] = {
     {"Product", &productFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0},
     {" Waste ", &wasteFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0}};
 
@@ -73,7 +73,6 @@ systemState states[4] = {{false, true, false, ILI9341_YELLOW, RUNNING},
                          {true, true, false, ILI9341_BLUE, PRIME},
                          {true, true, true, ILI9341_CYAN, RINSE}};
 state stateNow = STANDBY;
-state stateLast = STANDBY;
 boolean stateChanged = false;
 
 void prodFlowIrq() { productFlowCounter++; }
@@ -138,43 +137,36 @@ boolean readSensors(void) {
 // Perform state transitions
 void processEvents(void) {
   if (start) {
-    stateLast = STANDBY;
     stateNow = STANDBY;
     stateChanged = true;
     start = false;
   }
   if (transitionEvents[T_PRIME]) {
-    stateLast = stateNow;
     stateNow = RINSE;
     stateChanged = true;
     transitionEvents[T_PRIME] = false;
   }
   if (transitionEvents[T_RINSE_START]) {
-    stateLast = stateNow;
     stateNow = RUNNING;
     stateChanged = true;
     transitionEvents[T_RINSE_START] = false;
   }
   if (transitionEvents[T_RINSE_STOP]) {
-    stateLast = stateNow;
     stateNow = STANDBY;
     stateChanged = true;
     transitionEvents[T_RINSE_STOP] = false;
   }
   if (transitionEvents[T_RUN]) {
-    stateLast = stateNow;
     stateNow = RINSE;
     stateChanged = true;
     transitionEvents[T_RUN] = false;
   }
   if (transitionEvents[T_PLAY_DELAY]) {
-    stateLast = stateNow;
     stateNow = PRIME;
     stateChanged = true;
     transitionEvents[T_PLAY_DELAY] = false;
   }
   if (transitionEvents[T_PAUSE_DELAY]) {
-    stateLast = stateNow;
     stateNow = RINSE;
     stateChanged = true;
     transitionEvents[T_PAUSE_DELAY] = false;
