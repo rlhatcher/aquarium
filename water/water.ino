@@ -22,9 +22,6 @@ Adafruit_FT6206 cts = Adafruit_FT6206();
 // Event variables
 boolean start = false;
 
-enum timerEvent { T_PRIME, T_RINSE_START, T_RINSE_STOP, T_RUN, T_PLAY_DELAY, T_PAUSE_DELAY };
-unsigned int timerEvents[6] = {0, 0, 0, 0, 0, 0};
-boolean transitionEvents[6] = {false, false, false, false, false, false};
 
 // Push button control setup
 int btnH = 40;
@@ -74,6 +71,23 @@ systemState states[4] = {{false, true, false, ILI9341_YELLOW, RUNNING},
                          {true, true, true, ILI9341_CYAN, RINSE}};
 state stateNow = STANDBY;
 boolean stateChanged = false;
+
+enum event { T_PRIME, T_RINSE_START, T_RINSE_STOP, T_RUN, T_PLAY_DELAY, T_PAUSE_DELAY };
+unsigned int timerEvents[6] = {0, 0, 0, 0, 0, 0};
+boolean transitionEvents[6] = {false, false, false, false, false, false};
+typedef struct eventType {
+  event event;
+  unsigned int millis;
+  boolean active;
+  state targetState;
+};
+
+eventType events[6] = {{T_PRIME, 0, false, PRIME},
+                       {T_RINSE_START, 0, false, RINSE},
+                       {T_RINSE_STOP, 0, false, STANDBY},
+                       {T_RUN, 0, false, RUNNING},
+                       {T_PLAY_DELAY, 0, false, STANDBY},
+                       {T_PAUSE_DELAY, 0, false, STANDBY}};
 
 void prodFlowIrq() { productFlowCounter++; }
 void wasteFlowIrq() { wasteFlowCounter++; }
