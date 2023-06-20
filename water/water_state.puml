@@ -19,18 +19,23 @@ state prime {
   prime : pump off
 }
 
-state rinse {
-  rinse : feed on
-  rinse : purge on 
-  rinse : pump on
+state rinse_start {
+  rinse_start : feed on
+  rinse_start : purge on 
+  rinse_start : pump on
+}
+state rinse_stop {
+  rinse_stop : feed on
+  rinse_stop : purge on 
+  rinse_stop : pump on
 }
 
 [*] --> standby : start
 standby --> prime : touch_play
-prime --> rinse : t_prime
-rinse --> running : t_rinse_start
-running --> rinse : touch_pause
-rinse --> standby : t_rinse_stop
-running --> rinse : t_run
+prime --> rinse_start : t_prime
+rinse_start --> running : t_rinse_start
+running --> rinse_stop : touch_pause
+rinse_stop --> standby : t_rinse_stop
+running --> rinse_start : t_run
 
 @enduml

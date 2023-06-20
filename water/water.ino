@@ -57,37 +57,37 @@ sensor sensors[NUM_SENSORS] = {
     {"Product", &productFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0},
     {" Waste ", &wasteFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0}};
 
-enum state { STANDBY, RUNNING, PRIME, RINSE };
+enum state { STANDBY, RUNNING, PRIME, RINSE_START, RINSE_STOP };
 typedef struct systemState {
   boolean feed;
   boolean purge;
   boolean pump;
   uint16_t colour;
   state icon;
+  unsigned int timer;
 };
-systemState states[4] = {{false, true, false, ILI9341_YELLOW, RUNNING},
-                         {true, false, true, ILI9341_GREEN, STANDBY},
-                         {true, true, false, ILI9341_BLUE, PRIME},
-                         {true, true, true, ILI9341_CYAN, RINSE}};
+systemState states[5] = {{false, true, false, ILI9341_YELLOW, RUNNING, 0},
+                         {true, false, true, ILI9341_GREEN, STANDBY, 0},
+                         {true, true, false, ILI9341_BLUE, PRIME, 0},
+                         {true, true, true, ILI9341_CYAN, RUNNING, 0},
+                         {true, true, true, ILI9341_CYAN, RUNNING, 0}};
+
 state stateNow = STANDBY;
 boolean stateChanged = false;
 
-enum event { T_PRIME, T_RINSE_START, T_RINSE_STOP, T_RUN, T_PLAY_DELAY, T_PAUSE_DELAY };
-unsigned int timerEvents[6] = {0, 0, 0, 0, 0, 0};
-boolean transitionEvents[6] = {false, false, false, false, false, false};
+enum event { T_PRIME, T_RINSE_START, T_RINSE_STOP, T_RUN, T_PLAY, T_PAUSE };
 typedef struct eventType {
   event event;
-  unsigned int millis;
   boolean active;
   state targetState;
 };
 
-eventType events[6] = {{T_PRIME, 0, false, PRIME},
-                       {T_RINSE_START, 0, false, RINSE},
+eventType events[6] = {{T_PRIME, 0, false, RINSE_START},
+                       {T_RINSE_START, 0, false, RUNNING},
                        {T_RINSE_STOP, 0, false, STANDBY},
-                       {T_RUN, 0, false, RUNNING},
-                       {T_PLAY_DELAY, 0, false, STANDBY},
-                       {T_PAUSE_DELAY, 0, false, STANDBY}};
+                       {T_RUN, 0, false, RINSE_START},
+                       {T_PLAY, 0, false, PRIME},
+                       {T_PAUSE, 0, false, RINSE_STOP}};
 
 void prodFlowIrq() { productFlowCounter++; }
 void wasteFlowIrq() { wasteFlowCounter++; }
@@ -155,35 +155,14 @@ void processEvents(void) {
     stateChanged = true;
     start = false;
   }
-  if (transitionEvents[T_PRIME]) {
-    stateNow = RINSE;
-    stateChanged = true;
-    transitionEvents[T_PRIME] = false;
-  }
-  if (transitionEvents[T_RINSE_START]) {
-    stateNow = RUNNING;
-    stateChanged = true;
-    transitionEvents[T_RINSE_START] = false;
-  }
-  if (transitionEvents[T_RINSE_STOP]) {
-    stateNow = STANDBY;
-    stateChanged = true;
-    transitionEvents[T_RINSE_STOP] = false;
-  }
-  if (transitionEvents[T_RUN]) {
-    stateNow = RINSE;
-    stateChanged = true;
-    transitionEvents[T_RUN] = false;
-  }
-  if (transitionEvents[T_PLAY_DELAY]) {
-    stateNow = PRIME;
-    stateChanged = true;
-    transitionEvents[T_PLAY_DELAY] = false;
-  }
-  if (transitionEvents[T_PAUSE_DELAY]) {
-    stateNow = RINSE;
-    stateChanged = true;
-    transitionEvents[T_PAUSE_DELAY] = false;
+
+  // Transition to target state if event is active
+  for (int i = 0; i < 6; i++) {
+    if (events[i].active) {
+      stateNow = events[i].targetState;
+      stateChanged = true;
+      events[i].active = false;
+    }
   }
 }
 
@@ -242,34 +221,34 @@ void loop() {
     case STANDBY:
       drawStatus(ILI9341_BLACK, "Standby");
       drawControl(stateNow);
-      if (timerEvents[T_PLAY_DELAY] == 0) {
+      if (states[STANDBY].timer == 0) {
         Serial.println("Entering Standby");
-        timerEvents[T_PLAY_DELAY] = millis();
+        states[STANDBY].timer = millis();
       } else {
-        if (millis() - timerEvents[T_PLAY_DELAY] > 500) {
+        if (millis() - states[STANDBY].timer > 500) {
           if (touch) {
             if (y < 340) {
-              transitionEvents[T_PLAY_DELAY] = true;
+              events[T_PLAY].active = true;
             }
           }
-          timerEvents[T_PLAY_DELAY] = 0;
+          states[STANDBY].timer = 0;
         }
       }
       break;
     case RUNNING:
       drawStatus(ILI9341_BLACK, " Running ");
       drawControl(stateNow);
-      if (timerEvents[T_PAUSE_DELAY] == 0) {
+      if (events[T_PAUSE].millis == 0) {
         Serial.println("Entering Running");
-        timerEvents[T_PAUSE_DELAY] = millis();
+        events[T_PAUSE].millis = millis();
       } else {
-        if (millis() - timerEvents[T_PAUSE_DELAY] > 500) {
+        if (millis() - events[T_PAUSE].millis > 500) {
           if (touch) {
             if (y < 340) {
-              transitionEvents[T_PAUSE_DELAY] = true;
+              events[T_PAUSE].millis = true;
             }
           }
-          timerEvents[T_PAUSE_DELAY] = 0;
+          events[T_PAUSE].millis = 0;
         }
       }
       break;
