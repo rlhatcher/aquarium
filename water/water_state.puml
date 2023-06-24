@@ -1,41 +1,45 @@
 @startuml water_state
 hide empty description
 
-state standby {
-  standby: feed off
-  standby: pump off
-  standby: purge on
+state waiting {
+  waiting: feed\t\toff
+  waiting: pump\toff
+  waiting: purge\ton
+  waiting: btn\t\tpause
+  waiting: /wait rinse_period
+}
+
+state priming {
+  priming : feed\t\ton
+  priming : purge\ton
+  priming : pump\toff
+  priming : /wait prime_time
+}
+
+state rinsing {
+    rinsing: feed\t\ton
+    rinsing: purge\ton 
+    rinsing: pump\ton
+    rinsing: /wait rinse_time
 }
 
 state running {
-  running : feed on
-  running : purge off
-  running : pump on
+  running: feed\t\ton
+  running: purge\toff
+  running: pump\ton
+  running: btn\t\tplay
+  running: /wait run_time
 }
 
-state prime {
-  prime : feed on
-  prime : purge on
-  prime : pump off
-}
-
-state rinse_start {
-  rinse_start : feed on
-  rinse_start : purge on 
-  rinse_start : pump on
-}
-state rinse_stop {
-  rinse_stop : feed on
-  rinse_stop : purge on 
-  rinse_stop : pump on
-}
-
-[*] --> standby : start
-standby --> prime : touch_play
-prime --> rinse_start : t_prime
-rinse_start --> running : t_rinse_start
-running --> rinse_stop : touch_pause
-rinse_stop --> standby : t_rinse_stop
-running --> rinse_start : t_run
+state stopstart <<choice>>
+[*] --> waiting : start
+waiting --> priming : rinse_needed
+waiting --> priming : btn_pressed\n[btn = play]
+priming --> rinsing: primed
+rinsing --> stopstart: rinsed
+stopstart --> running : [btn == play]
+running --> rinsing: btn_pressed\n[btn = pause]
+stopstart--> waiting : [btn == pause]
+running --> rinsing: run_time
 
 @enduml

@@ -65,12 +65,15 @@ typedef struct systemState {
   uint16_t colour;
   state icon;
   unsigned int timer;
+  unsigned int wait_time;
+  char *label;
+  event event;
 };
-systemState states[5] = {{false, true, false, ILI9341_YELLOW, RUNNING, 0},
-                         {true, false, true, ILI9341_GREEN, STANDBY, 0},
-                         {true, true, false, ILI9341_BLUE, PRIME, 0},
-                         {true, true, true, ILI9341_CYAN, RUNNING, 0},
-                         {true, true, true, ILI9341_CYAN, RUNNING, 0}};
+systemState states[5] = {{false, true, false, ILI9341_YELLOW, RUNNING, 0, 500, "Standby", T_PLAY},
+                         {true, false, true, ILI9341_GREEN, STANDBY, 0, 500, "Running", T_PAUSE},
+                         {true, true, false, ILI9341_BLUE, PRIME, 0, 10000, "Priming", T_PRIME},
+                         {true, true, true, ILI9341_CYAN, RUNNING, 0, 10000, "Rinsing", T_RINSE_START},
+                         {true, true, true, ILI9341_CYAN, RUNNING, 0, 10000, "Rinsing", T_RINSE_STOP}};
 
 state stateNow = STANDBY;
 boolean stateChanged = false;
@@ -219,36 +222,35 @@ void loop() {
   // State specific processing
   switch (stateNow) {
     case STANDBY:
-      drawStatus(ILI9341_BLACK, "Standby");
+      drawStatus(ILI9341_BLACK, states[stateNow].label);
       drawControl(stateNow);
-      if (states[STANDBY].timer == 0) {
-        Serial.println("Entering Standby");
-        states[STANDBY].timer = millis();
+      if (states[stateNow].timer == 0) {
+        states[stateNow].timer = millis();
       } else {
-        if (millis() - states[STANDBY].timer > 500) {
+        if (millis() - states[stateNow].timer > states[stateNow].wait_time) {
           if (touch) {
             if (y < 340) {
-              events[T_PLAY].active = true;
+              events[states[stateNow].event].active = true;
             }
           }
-          states[STANDBY].timer = 0;
+          states[stateNow].timer = 0;
         }
       }
       break;
     case RUNNING:
       drawStatus(ILI9341_BLACK, " Running ");
       drawControl(stateNow);
-      if (events[T_PAUSE].millis == 0) {
+      if (states[stateNow].timer == 0) {
         Serial.println("Entering Running");
-        events[T_PAUSE].millis = millis();
+        states[stateNow].timer = millis();
       } else {
-        if (millis() - events[T_PAUSE].millis > 500) {
+        if (millis() - states[stateNow].timer > 500) {
           if (touch) {
             if (y < 340) {
-              events[T_PAUSE].millis = true;
+              events[T_PAUSE].active = true;
             }
           }
-          events[T_PAUSE].millis = 0;
+          states[stateNow].timer = 0;
         }
       }
       break;
