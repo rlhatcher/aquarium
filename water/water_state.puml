@@ -6,7 +6,7 @@ state waiting {
   waiting: pump\toff
   waiting: purge\ton
   waiting: btn\t\tpause
-  waiting: /wait rinse_period
+  waiting: /wait idle_time
 }
 
 state priming {
@@ -40,6 +40,6 @@ rinsing --> stopstart: rinsed
 stopstart --> running : [btn == play]
 running --> rinsing: btn_pressed\n[btn = pause]
 stopstart--> waiting : [btn == pause]
-running --> rinsing: run_time
+running --> rinsing: max_run
 
 @enduml
