@@ -7,6 +7,9 @@
 
 #define NUM_CONTROLS 3  // number of push buttons
 #define NUM_SENSORS 2   // number of flow sensors
+#define NUM_STATES 4 // number of system states
+#define NUM_TIMERS 4 // number of event timers
+#define NUM_EVENTS 6 // number of events
 
 #define AVERAGE_PERIOD 60  // number of seconds for flow average
 
@@ -14,6 +17,9 @@
 #define MILLI_HOUR 3600000   // One hour in milliseconds
 #define MILLI_MINUTE 60000   // One minute in milliseconds
 
+// The state machine is defined using arrays of structures that
+// define the system states, events, and timers. Enumerations are
+// used to index the arrays.
 enum event {
   RINSE_NEEDED,  // The system has idled for too long
   PRIMED,        // The priming function is complete
@@ -22,60 +28,65 @@ enum event {
   PLAY_BTN,      // The play button was pressed
   MAX_RUN        // The maximum run time has been reached
 };
+enum event_time {
+  IDLE_TIME,   // RINSE_NEEDED timer
+  PRIME_TIME,  // PRIMED timer
+  RINSE_TIME,  // RINSED timer
+  RUN_TIME     // MAX_RUN timer
+};
 enum control {
   FEED,   // Water feed valve from pump
   PURGE,  // Purge valve for RO membrane
-  PUMP,   // Water pump
+  PUMP    // Water pump
 };
-enum event_time { IDLE_TIME, PRIME_TIME, RINSE_TIME, RUN_TIME };
 enum state { WAITING, PRIMING, RINSING, RUNNING };
 
-// time events relate to transitions between states
-// the timer array holds the duration to wait and the event to send
+// time event timers manage the transitions between states.
+// the event_times array holds the duration to wait and the
+// event to send
 typedef struct event_timer {
   unsigned long end_millis;
   unsigned long duration;
   event event;
 };
-event_timer event_times[4] = {{0, 6 * MILLI_HOUR, RINSE_NEEDED},
-                              {0, 5 * MILLI_MINUTE, PRIMED},
-                              {0, 10 * MILLI_MINUTE, RINSED},
-                              {0, 4 * MILLI_HOUR, MAX_RUN}};
-
-// system states relate to the state of the system
-// the states array holds the state to set the system controls to and the timer
-// to start
-
-typedef struct systemState {
-  boolean feed;
-  boolean pump;
-  boolean purge;
-  uint16_t colour;
-  state icon;
-  event_time timer;
-  char *label;
+event_timer event_times[NUM_TIMERS] = {
+  {0, 6 * MILLI_HOUR, RINSE_NEEDED},
+  {0, 5 * MILLI_MINUTE, PRIMED},
+  {0, 10 * MILLI_MINUTE, RINSED},
+  {0, 4 * MILLI_HOUR, MAX_RUN}
 };
 
-systemState states[5] = {
-    {false, false, true, ILI9341_YELLOW, WAITING, IDLE_TIME, "Waiting"},
-    {true, true, false, ILI9341_GREEN, PRIMING, PRIME_TIME, "Priming"},
-    {true, true, true, ILI9341_BLUE, RINSING, RINSE_TIME, "Rinsing"},
-    {true, false, true, ILI9341_CYAN, RUNNING, RUN_TIME, "Running"}};
+typedef struct system_state {
+  boolean feed;  // control states
+  boolean pump;
+  boolean purge;
+  uint16_t colour;  // display settings
+  state icon; 
+  char *label;
+  event_time timer;  // associated timer
+};
+
+system_state states[NUM_STATES] = {
+    {false, false, true, 0xFFE0, WAITING, "Waiting", IDLE_TIME},
+    {true, true, false, 0x07E0, PRIMING, "Priming", PRIME_TIME},
+    {true, true, true, 0x001F, RINSING, "Rinsing", RINSE_TIME},
+    {true, false, true, 0x07FF, RUNNING, "Running", RUN_TIME}};
 
 state stateNow = WAITING;
 
-typedef struct eventType {
+typedef struct system_event {
   boolean active;
   state targetState;
 };
-#define NUM_EVENTS 6
-eventType events[NUM_EVENTS] = {{false, PRIMING}, {false, RINSING},
-                                {false, RUNNING}, {false, RINSING},
-                                {false, PRIMING}, {false, RINSING}};
 
-// Flow sensor control setup
-int prd_flow_pin = 2;
-int wst_flow_pin = 3;
+system_event events[NUM_EVENTS] = {
+  {false, PRIMING}, {false, RINSING},
+  {false, RUNNING}, {false, RINSING},
+  {false, PRIMING}, {false, RINSING}
+};
+
+volatile unsigned long productFlowCounter = 0;
+volatile unsigned long wasteFlowCounter = 0;
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_FT6206 cts = Adafruit_FT6206();
@@ -97,8 +108,6 @@ typedef struct buttonCtrl {
 buttonCtrl controls[NUM_CONTROLS] = {
     {"Feed", 6, false}, {"Purge", 5, true}, {"Pump", 7, false}};
 
-volatile unsigned long productFlowCounter = 0;
-volatile unsigned long wasteFlowCounter = 0;
 
 typedef struct sensor {
   String label;
@@ -121,6 +130,11 @@ void wasteFlowIrq() { wasteFlowCounter++; }
 
 // Board setup
 void setup() {
+
+  // Flow sensor pins
+  int prd_flow_pin = 2;
+  int wst_flow_pin = 3;
+
   Serial.begin(115200);
 
   for (int i = 0; i < NUM_CONTROLS; i++) {
@@ -240,11 +254,12 @@ void loop() {
     stateChanged = false;
   }
 
-  // Check for events ready to send
+  // Send any events that are ready
   if (millis() > event_times[states[stateNow].timer].end_millis) {
     events[event_times[states[stateNow].timer].event].active = true;
   }
 
+  // Get any external events
   if (getTouch()) {
     Serial.println("Touch");
   }
