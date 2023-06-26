@@ -41,7 +41,7 @@ enum control {
 };
 enum state { WAITING, PRIMING, RINSING, RUNNING };
 
-// time event timers manage the transitions between states.
+// event timers manage the transitions between states.
 // the event_times array holds the duration to wait and the
 // event to send
 typedef struct event_timer {
@@ -85,9 +85,23 @@ system_event events[NUM_EVENTS] = {
   {false, PRIMING}, {false, RINSING}
 };
 
+typedef struct btn_control {
+  String label;
+  int pin;
+  boolean state;
+};
+
+btn_control controls[NUM_CONTROLS] = {
+    {"Feed", 6, false}, {"Purge", 5, true}, {"Pump", 7, false}};
+
+
+// Global Variables
+
+// Flow sensor variables set through interrupts
 volatile unsigned long productFlowCounter = 0;
 volatile unsigned long wasteFlowCounter = 0;
 
+// TFT and touch screen
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_FT6206 cts = Adafruit_FT6206();
 
@@ -98,15 +112,6 @@ boolean start = false;
 int btnH = 40;
 int btnW = 0;
 int btnT = 0;
-
-typedef struct buttonCtrl {
-  String label;
-  int pin;
-  boolean state;
-};
-
-buttonCtrl controls[NUM_CONTROLS] = {
-    {"Feed", 6, false}, {"Purge", 5, true}, {"Pump", 7, false}};
 
 
 typedef struct sensor {
