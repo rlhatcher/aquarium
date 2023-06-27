@@ -35,9 +35,9 @@ enum event_time {
   RUN_TIME     // MAX_RUN timer
 };
 enum control {
-  FEED,   // Water feed valve from pump
-  PUMP,   // Water pump
-  PURGE   // Purge valve for RO membrane
+  FEED,  // Water feed valve from pump
+  PUMP,  // Water pump
+  PURGE  // Purge valve for RO membrane
 };
 enum state { WAITING, PRIMING, RINSING, RUNNING };
 
@@ -52,7 +52,7 @@ typedef struct event_timer {
 event_timer event_times[NUM_TIMERS] = {
     {0, 6 * MILLI_HOUR, RINSE_NEEDED},  // idle_time
     {0, 1 * MILLI_MINUTE, PRIMED},      // prime_time
-    {0, 1 * MILLI_MINUTE, RINSED},     // rinse_time
+    {0, 1 * MILLI_MINUTE, RINSED},      // rinse_time
     {0, 4 * MILLI_HOUR, MAX_RUN}};      // run_time
 
 // System states manage the control states, display settings,
@@ -217,7 +217,7 @@ void loop() {
     for (int i = 0; i < NUM_CONTROLS; i++) {
       digitalWrite(controls[i].pin, controls[i].state);
     }
-    draw_buttons(ILI9341_BLACK, states[stateNow].label);
+    draw_statechanged(ILI9341_BLACK, states[stateNow].label);
     draw_play_pause(stateNow);
     event_times[states[stateNow].timer].end_millis =
         event_times[states[stateNow].timer].duration + millis();
@@ -231,7 +231,8 @@ void loop() {
     events[event_times[states[stateNow].timer].event].active = true;
     event_times[states[stateNow].timer].end_millis = 0;
   }
-  draw_time(formatMillis(event_times[states[stateNow].timer].end_millis - now));
+  draw_timechanged(
+      formatMillis(event_times[states[stateNow].timer].end_millis - now));
 
   // Draw flow meter readings
   if (readSensors()) {
@@ -250,7 +251,7 @@ void loop() {
 }
 
 // Display the state and set the controls to the current state
-void draw_buttons(uint16_t fg_colour, String status) {
+void draw_statechanged(uint16_t fg_colour, String status) {
   tft.setTextSize(3);
   tft.fillRoundRect(0, 145, tft.width(), 48, 5, states[stateNow].colour);
   for (int i = 0; i < NUM_CONTROLS; i++) {
@@ -267,7 +268,7 @@ void draw_buttons(uint16_t fg_colour, String status) {
   tft.print(status);
 }
 
-void draw_time(String remaining) {
+void draw_timechanged(String remaining) {
   tft.setTextSize(3);
   tft.setCursor(165, 160);
   tft.setTextColor(ILI9341_BLACK, states[stateNow].colour);
@@ -320,12 +321,11 @@ boolean readSensors(void) {
     interrupts();
 
     unsigned long now = millis();
-    unsigned long deltaCount = pulseCount - sensors[i].oldPulseCount;
-    unsigned long deltaTime = now - sensors[i].lastMillis;
+    unsigned long dCount = pulseCount - sensors[i].oldPulseCount;
+    unsigned long dTime = now - sensors[i].lastMillis;
 
-    if (deltaTime >= 1000) {
-      sensors[i].flowRate =
-          ((deltaCount / 58.800) / ((float)deltaTime) * 60000);
+    if (dTime >= 1000) {
+      sensors[i].flowRate = ((dCount / 58.800) / ((float)dTime * 60000));
       sensors[i].flowRates[sensors[i].bufferIndex] = sensors[i].flowRate;
       sensors[i].flowRateSum += sensors[i].flowRate;
       sensors[i].averageFlowRate = sensors[i].flowRateSum / AVERAGE_PERIOD;
