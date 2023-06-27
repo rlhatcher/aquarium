@@ -49,6 +49,7 @@ typedef struct event_timer {
   unsigned long duration;
   event event;
 };
+
 event_timer event_times[NUM_TIMERS] = {
     {0, 6 * MILLI_HOUR, RINSE_NEEDED},  // idle_time
     {0, 1 * MILLI_MINUTE, PRIMED},      // prime_time
@@ -67,7 +68,6 @@ typedef struct system_state {
   event_time timer;  // associated timer
 };
 
-// WAITING, PRIMING, RINSING, RUNNING
 system_state states[NUM_STATES] = {
     {false, true, false, 0xFFE0, WAITING, "Waiting", IDLE_TIME},  // waiting
     {true, true, false, 0x07FF, PRIMING, "Priming", PRIME_TIME},  // priming
@@ -103,7 +103,8 @@ typedef struct btn_control {
 btn_control controls[NUM_CONTROLS] = {
     {"Feed", 6, false}, {"Purge", 5, true}, {"Pump", 7, false}};
 
-// Flow sensors
+// Flow sensors use interrupts to count pulses that are stored in
+// volatile global variables 
 volatile unsigned long productFlowCounter = 0;
 volatile unsigned long wasteFlowCounter = 0;
 
@@ -114,9 +115,9 @@ typedef struct sensor {
   volatile unsigned long *pulseCount;
   unsigned long oldPulseCount;
   unsigned long lastMillis;
-  float flowRate;
-  float avg_rate;
-  float flowRateSum;
+  float flow;
+  float avg_flow;
+  float flow_sum;
   float flowRates[AVERAGE_PERIOD];  // buffer to store flow rates for averaging
   int bufferIndex;
 };
@@ -218,7 +219,6 @@ void loop() {
       digitalWrite(controls[i].pin, controls[i].state);
     }
     draw_statechanged(ILI9341_BLACK, states[stateNow].label);
-    draw_play_pause(stateNow);
     event_times[states[stateNow].timer].end_millis =
         event_times[states[stateNow].timer].duration + millis();
     stateChanged = false;
@@ -226,22 +226,29 @@ void loop() {
 
   // Send any events that are ready
   unsigned long now = millis();
+
   if (now > event_times[states[stateNow].timer].end_millis) {
-    Serial.println("Setting " + String(stateNow) + " event");
     events[event_times[states[stateNow].timer].event].active = true;
     event_times[states[stateNow].timer].end_millis = 0;
+  } else {
+    draw_timechanged(
+        formatMillis(event_times[states[stateNow].timer].end_millis - now));
   }
-  draw_timechanged(
-      formatMillis(event_times[states[stateNow].timer].end_millis - now));
 
   // Draw flow meter readings
   draw_sensors();
 }
 
-// Display the state and set the controls to the current state
+// Updates the display when the state changes to avoid flicker
 void draw_statechanged(uint16_t fg_colour, String status) {
+  // Status Bar
   tft.setTextSize(3);
   tft.fillRoundRect(0, 145, tft.width(), 48, 5, states[stateNow].colour);
+  tft.setCursor(10, 160);
+  tft.setTextColor(fg_colour, states[stateNow].colour);
+  tft.print(status);
+
+  // Flow Meter Readings
   for (int i = 0; i < NUM_CONTROLS; i++) {
     int padding = (controls[i].label.length() == 4) ? 20 : 10;
     uint16_t color = controls[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
@@ -251,20 +258,9 @@ void draw_statechanged(uint16_t fg_colour, String status) {
     tft.setTextColor(ILI9341_WHITE, color);
     tft.println(controls[i].label);
   }
-  tft.setCursor(10, 160);
-  tft.setTextColor(fg_colour, states[stateNow].colour);
-  tft.print(status);
-}
 
-void draw_timechanged(String remaining) {
-  tft.setTextSize(3);
-  tft.setCursor(165, 160);
-  tft.setTextColor(ILI9341_BLACK, states[stateNow].colour);
-  tft.print(remaining);
-}
-// Draws the play and pause icons
-void draw_play_pause(state theState) {
-  state icon = states[theState].icon;
+  // Play / Pause Button
+  state icon = states[stateNow].icon;
   tft.fillCircle(250, 70, 60, states[icon].colour);
   tft.drawCircle(250, 70, 60, ILI9341_WHITE);
   tft.drawCircle(250, 70, 59, ILI9341_BLACK);
@@ -277,6 +273,14 @@ void draw_play_pause(state theState) {
     tft.fillRoundRect(260, 30, 20, 80, 5, ILI9341_BLACK);
     play = false;
   }
+}
+
+// Updates the display when the time changes
+void draw_timechanged(String remaining) {
+  tft.setTextSize(3);
+  tft.setCursor(165, 160);
+  tft.setTextColor(ILI9341_BLACK, states[stateNow].colour);
+  tft.print(remaining);
 }
 
 boolean getTouch(void) {
@@ -313,13 +317,13 @@ void draw_sensors(void) {
     unsigned long dTime = now - sensors[i].lastMillis;
 
     if (dTime >= 1000) {
-      sensors[i].flowRate = ((dCount / 58.800) / ((float)dTime * 60000));
-      sensors[i].flowRates[sensors[i].bufferIndex] = sensors[i].flowRate;
-      sensors[i].flowRateSum = 0;
+      sensors[i].flow = ((dCount / 58.800) / ((float)dTime * 60000));
+      sensors[i].flowRates[sensors[i].bufferIndex] = sensors[i].flow;
+      sensors[i].flow_sum = 0;
       for (int j = 0; j < AVERAGE_PERIOD; j++) {
-        sensors[i].flowRateSum += sensors[i].flowRates[j];
+        sensors[i].flow_sum += sensors[i].flowRates[j];
       }
-      sensors[i].avg_rate = sensors[i].flowRateSum / AVERAGE_PERIOD;
+      sensors[i].avg_flow = sensors[i].flow_sum / AVERAGE_PERIOD;
       sensors[i].bufferIndex = (sensors[i].bufferIndex + 1) % AVERAGE_PERIOD;
       sensors[i].oldPulseCount = pulseCount;
       sensors[i].lastMillis = now;
@@ -329,7 +333,7 @@ void draw_sensors(void) {
       tft.setTextSize(2);
       tft.print(sensors[i].label);
 
-      xp = gap + ringMeter(sensors[i].avg_rate, 0, 40, xp, yp, rad, "ml/min");
+      xp = gap + ringMeter(sensors[i].avg_flow, 0, 40, xp, yp, rad, "ml/min");
     }
   }
 }
@@ -342,9 +346,8 @@ int ringMeter(int value, int vmin, int vmax, int x, int y, int r, char *units) {
   int angle = 150;      // Half the sweep angle of meter (300 degrees)
   int text_colour = 0;  // To hold the text colour
   int v = map(value, vmin, vmax, -angle, angle);  // Map the value to an angle v
-  byte seg = 5;  // Segments are 5 degrees wide = 60 segments for 300 degrees
-  byte inc =
-      15;  // Draw segments every 5 degrees, increase to 10 for segmented ring
+  byte seg = 5;   // Segments are 5 degrees wide = 60 segments for 300 degrees
+  byte inc = 15;  // Draw segments every 5 deg, increase to 10 for segments
 
   // Draw colour blocks every inc degrees
   for (int i = -angle; i < angle; i += inc) {
