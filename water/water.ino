@@ -115,7 +115,7 @@ typedef struct sensor {
   unsigned long oldPulseCount;
   unsigned long lastMillis;
   float flowRate;
-  float avgFlowRate;
+  float avg_rate;
   float flowRateSum;
   float flowRates[AVERAGE_PERIOD];  // buffer to store flow rates for averaging
   int bufferIndex;
@@ -300,6 +300,8 @@ boolean getTouch(void) {
 // Reads the flow sensors and updates the flow rates. A circular buffer is used
 // to calculate the average flow rate over AVERAGE_PERIOD of seconds.
 void draw_sensors(void) {
+  int xp = 0, yp = 5, gap = 5, rad = 40;
+
   for (int i = 0; i < NUM_SENSORS; i++) {
     // Disable the interrupts while we read the counter value
     noInterrupts();
@@ -317,19 +319,17 @@ void draw_sensors(void) {
       for (int j = 0; j < AVERAGE_PERIOD; j++) {
         sensors[i].flowRateSum += sensors[i].flowRates[j];
       }
-      sensors[i].avgFlowRate = sensors[i].flowRateSum / AVERAGE_PERIOD;
+      sensors[i].avg_rate = sensors[i].flowRateSum / AVERAGE_PERIOD;
       sensors[i].bufferIndex = (sensors[i].bufferIndex + 1) % AVERAGE_PERIOD;
       sensors[i].oldPulseCount = pulseCount;
       sensors[i].lastMillis = now;
 
-      int xpos = 0, ypos = 5, gap = 5, radius = 40;
-
-      tft.setCursor(xpos, ypos + (radius + gap) * 2);
+      tft.setCursor(xp, yp + (rad + gap) * 2);
       tft.setTextColor(ILI9341_WHITE, ILI9341_PURPLE);
       tft.setTextSize(2);
       tft.print(sensors[i].label);
 
-      ringMeter(sensors[i].avgFlowRate, 0, 40, xpos, ypos, radius, "ml/min");
+      xp = gap + ringMeter(sensors[i].avg_rate, 0, 40, xp, yp, rad, "ml/min");
     }
   }
 }
