@@ -225,17 +225,15 @@ void loop() {
   }
 
   // Send any events that are ready
-  if (millis() > event_times[states[stateNow].timer].end_millis) {
+  unsigned long now = millis();
+  if (now > event_times[states[stateNow].timer].end_millis) {
     Serial.println("Setting " + String(stateNow) + " event");
     events[event_times[states[stateNow].timer].event].active = true;
     event_times[states[stateNow].timer].end_millis = 0;
-  } else {
-    // Update the timer display
-    draw_time(formatMillis(event_times[states[stateNow].timer].end_millis -
-                           millis()));
   }
-  draw_time(formatMillis(event_times[states[stateNow].timer].end_millis - millis()));
+  draw_time(formatMillis(event_times[states[stateNow].timer].end_millis - now));
 
+  // Draw flow meter readings
   if (readSensors()) {
     int xpos = 0, ypos = 5, gap = 5, radius = 40;
 
