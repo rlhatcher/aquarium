@@ -115,7 +115,7 @@ typedef struct sensor {
   unsigned long oldPulseCount;
   unsigned long lastMillis;
   float flowRate;
-  float averageFlowRate;
+  float avgFlowRate;
   float flowRateSum;
   float flowRates[AVERAGE_PERIOD];  // buffer to store flow rates for averaging
   int bufferIndex;
@@ -235,19 +235,7 @@ void loop() {
       formatMillis(event_times[states[stateNow].timer].end_millis - now));
 
   // Draw flow meter readings
-  if (readSensors()) {
-    int xpos = 0, ypos = 5, gap = 5, radius = 40;
-
-    for (int i = 0; i < NUM_SENSORS; i++) {
-      tft.setCursor(xpos, ypos + (radius + gap) * 2);
-      tft.setTextColor(ILI9341_WHITE, ILI9341_PURPLE);
-      tft.setTextSize(2);
-      tft.print(sensors[i].label);
-
-      xpos = gap + ringMeter(sensors[i].averageFlowRate, 0, 40, xpos, ypos,
-                             radius, "ml/min");
-    }
-  }
+  draw_sensors();
 }
 
 // Display the state and set the controls to the current state
@@ -311,9 +299,7 @@ boolean getTouch(void) {
 
 // Reads the flow sensors and updates the flow rates. A circular buffer is used
 // to calculate the average flow rate over AVERAGE_PERIOD of seconds.
-boolean readSensors(void) {
-  boolean changed = false;
-
+void draw_sensors(void) {
   for (int i = 0; i < NUM_SENSORS; i++) {
     // Disable the interrupts while we read the counter value
     noInterrupts();
@@ -327,16 +313,25 @@ boolean readSensors(void) {
     if (dTime >= 1000) {
       sensors[i].flowRate = ((dCount / 58.800) / ((float)dTime * 60000));
       sensors[i].flowRates[sensors[i].bufferIndex] = sensors[i].flowRate;
-      sensors[i].flowRateSum += sensors[i].flowRate;
-      sensors[i].averageFlowRate = sensors[i].flowRateSum / AVERAGE_PERIOD;
+      sensors[i].flowRateSum = 0;
+      for (int j = 0; j < AVERAGE_PERIOD; j++) {
+        sensors[i].flowRateSum += sensors[i].flowRates[j];
+      }
+      sensors[i].avgFlowRate = sensors[i].flowRateSum / AVERAGE_PERIOD;
       sensors[i].bufferIndex = (sensors[i].bufferIndex + 1) % AVERAGE_PERIOD;
       sensors[i].oldPulseCount = pulseCount;
       sensors[i].lastMillis = now;
 
-      changed = true;
+      int xpos = 0, ypos = 5, gap = 5, radius = 40;
+
+      tft.setCursor(xpos, ypos + (radius + gap) * 2);
+      tft.setTextColor(ILI9341_WHITE, ILI9341_PURPLE);
+      tft.setTextSize(2);
+      tft.print(sensors[i].label);
+
+      ringMeter(sensors[i].avgFlowRate, 0, 40, xpos, ypos, radius, "ml/min");
     }
   }
-  return changed;
 }
 
 int ringMeter(int value, int vmin, int vmax, int x, int y, int r, char *units) {
