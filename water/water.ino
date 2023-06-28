@@ -95,31 +95,32 @@ system_event events[NUM_EVENTS] = {
 
 // Push button controls
 typedef struct btn_control {
-  String label;
+  char *label;
   int pin;
   boolean state;
 };
 
 btn_control controls[NUM_CONTROLS] = {
-    {"Feed", 6, false}, {"Purge", 5, true}, {"Pump", 7, false}};
+    {"Feed", 6, false}, {"Pump", 7, false}, {"Purge", 5, true}};
 
 // Flow sensors use interrupts to count pulses that are stored in
-// volatile global variables 
+// volatile global variables
 volatile unsigned long productFlowCounter = 0;
 volatile unsigned long wasteFlowCounter = 0;
 
 void prodFlowIrq() { productFlowCounter++; }
 void wasteFlowIrq() { wasteFlowCounter++; }
+
 typedef struct sensor {
-  String label;
+  char *label;
   volatile unsigned long *pulseCount;
-  unsigned long oldPulseCount;
-  unsigned long lastMillis;
+  unsigned long last_count;
+  unsigned long last_milli;
   float flow;
-  float avg_flow;
+  float flow_avg;
   float flow_sum;
-  float flowRates[AVERAGE_PERIOD];  // buffer to store flow rates for averaging
-  int bufferIndex;
+  float flow_rates[AVERAGE_PERIOD];  // buffer to store flow rates for averaging
+  int buffer_idx;
 };
 
 sensor sensors[NUM_SENSORS] = {
@@ -135,9 +136,8 @@ Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 Adafruit_FT6206 cts = Adafruit_FT6206();
 
 // Event variables
-boolean start = false;
-boolean play = true;
-unsigned long time_left = 0;
+boolean start = false;  // Used to start the state machine
+boolean play = true;    // Tracks the play/pause button state
 
 // Push button control setup
 int btnH = 40;
@@ -187,7 +187,6 @@ void loop() {
 
   // Get any external events
   if (getTouch()) {
-    Serial.println("Touch");
     events[(play) ? PLAY_BTN : PAUSE_BTN].active = true;
   }
 
@@ -214,7 +213,6 @@ void loop() {
 
   // Manage state entry
   if (stateChanged) {
-    Serial.println(states[stateNow].label);
     for (int i = 0; i < NUM_CONTROLS; i++) {
       digitalWrite(controls[i].pin, controls[i].state);
     }
@@ -231,8 +229,7 @@ void loop() {
     events[event_times[states[stateNow].timer].event].active = true;
     event_times[states[stateNow].timer].end_millis = 0;
   } else {
-    draw_timechanged(
-        formatMillis(event_times[states[stateNow].timer].end_millis - now));
+    draw_timechanged(event_times[states[stateNow].timer].end_millis - now);
   }
 
   // Draw flow meter readings
@@ -240,7 +237,7 @@ void loop() {
 }
 
 // Updates the display when the state changes to avoid flicker
-void draw_statechanged(uint16_t fg_colour, String status) {
+void draw_statechanged(uint16_t fg_colour, char *status) {
   // Status Bar
   tft.setTextSize(3);
   tft.fillRoundRect(0, 145, tft.width(), 48, 5, states[stateNow].colour);
@@ -250,7 +247,7 @@ void draw_statechanged(uint16_t fg_colour, String status) {
 
   // Flow Meter Readings
   for (int i = 0; i < NUM_CONTROLS; i++) {
-    int padding = (controls[i].label.length() == 4) ? 20 : 10;
+    int padding = (strlen(controls[i].label) == 4) ? 20 : 10;
     uint16_t color = controls[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
     tft.drawRoundRect(i * btnW, btnT, btnW, btnH, 10, ILI9341_WHITE);
     tft.fillRoundRect(i * btnW + 1, btnT + 1, btnW - 2, btnH - 2, 10, color);
@@ -276,11 +273,23 @@ void draw_statechanged(uint16_t fg_colour, String status) {
 }
 
 // Updates the display when the time changes
-void draw_timechanged(String remaining) {
+void draw_timechanged(unsigned long millis) {
+  unsigned long seconds = millis / 1000;
+  unsigned long minutes = seconds / 60;
+  unsigned long hours = minutes / 60;
+
+  // Calculate the remaining minutes and seconds
+  minutes %= 60;
+  seconds %= 60;
+
+  // Format the time
+  char buffer[9];
+  snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu", hours, minutes, seconds);
+
   tft.setTextSize(3);
   tft.setCursor(165, 160);
   tft.setTextColor(ILI9341_BLACK, states[stateNow].colour);
-  tft.print(remaining);
+  tft.print(buffer);
 }
 
 boolean getTouch(void) {
@@ -313,27 +322,27 @@ void draw_sensors(void) {
     interrupts();
 
     unsigned long now = millis();
-    unsigned long dCount = pulseCount - sensors[i].oldPulseCount;
-    unsigned long dTime = now - sensors[i].lastMillis;
+    unsigned long dCount = pulseCount - sensors[i].last_count;
+    unsigned long dTime = now - sensors[i].last_milli;
 
     if (dTime >= 1000) {
       sensors[i].flow = ((dCount / 58.800) / ((float)dTime * 60000));
-      sensors[i].flowRates[sensors[i].bufferIndex] = sensors[i].flow;
+      sensors[i].flow_rates[sensors[i].buffer_idx] = sensors[i].flow;
       sensors[i].flow_sum = 0;
       for (int j = 0; j < AVERAGE_PERIOD; j++) {
-        sensors[i].flow_sum += sensors[i].flowRates[j];
+        sensors[i].flow_sum += sensors[i].flow_rates[j];
       }
-      sensors[i].avg_flow = sensors[i].flow_sum / AVERAGE_PERIOD;
-      sensors[i].bufferIndex = (sensors[i].bufferIndex + 1) % AVERAGE_PERIOD;
-      sensors[i].oldPulseCount = pulseCount;
-      sensors[i].lastMillis = now;
+      sensors[i].flow_avg = sensors[i].flow_sum / AVERAGE_PERIOD;
+      sensors[i].buffer_idx = (sensors[i].buffer_idx + 1) % AVERAGE_PERIOD;
+      sensors[i].last_count = pulseCount;
+      sensors[i].last_milli = now;
 
       tft.setCursor(xp, yp + (rad + gap) * 2);
       tft.setTextColor(ILI9341_WHITE, ILI9341_PURPLE);
       tft.setTextSize(2);
       tft.print(sensors[i].label);
 
-      xp = gap + ringMeter(sensors[i].avg_flow, 0, 40, xp, yp, rad, "ml/min");
+      xp = gap + ringMeter(sensors[i].flow_avg, 0, 40, xp, yp, rad, "ml/min");
     }
   }
 }
@@ -432,21 +441,4 @@ unsigned int rainbow(byte value) {
     red = 31;
   }
   return (red << 11) + (green << 5) + blue;
-}
-
-String formatMillis(unsigned long millis) {
-  unsigned long seconds = millis / 1000;
-  unsigned long minutes = seconds / 60;
-  unsigned long hours = minutes / 60;
-
-  // Calculate the remaining minutes and seconds
-  minutes %= 60;
-  seconds %= 60;
-
-  // Format the time string
-  char buffer[9];
-  snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu", hours, minutes,
-           seconds);
-
-  return String(buffer);
 }
