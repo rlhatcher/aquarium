@@ -178,7 +178,7 @@ void setup() {
 void loop() {
   boolean stateChanged = false;
 
-  // Handles our start event as a special case
+  // Handle our start event as a special case
   if (start) {
     stateNow = WAITING;
     stateChanged = true;
@@ -198,6 +198,7 @@ void loop() {
   }
 
   // Transition active events to their target state
+  // TODO: this will only transition to the last event in the array
   for (int i = 0; i < NUM_EVENTS; i++) {
     if (events[i].active) {
       stateNow = events[i].targetState;
@@ -244,15 +245,16 @@ void draw_statechanged(uint16_t fg_colour, char *status) {
   tft.setCursor(10, 160);
   tft.setTextColor(fg_colour, states[stateNow].colour);
   tft.print(status);
+  tft.print(" for");
 
   // Flow Meter Readings
   for (int i = 0; i < NUM_CONTROLS; i++) {
     int padding = (strlen(controls[i].label) == 4) ? 20 : 10;
-    uint16_t color = controls[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
+    uint16_t colour = controls[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
     tft.drawRoundRect(i * btnW, btnT, btnW, btnH, 10, ILI9341_WHITE);
-    tft.fillRoundRect(i * btnW + 1, btnT + 1, btnW - 2, btnH - 2, 10, color);
+    tft.fillRoundRect(i * btnW + 1, btnT + 1, btnW - 2, btnH - 2, 10, colour);
     tft.setCursor(i * btnW + padding, btnT + 10);
-    tft.setTextColor(ILI9341_WHITE, color);
+    tft.setTextColor(ILI9341_WHITE, colour);
     tft.println(controls[i].label);
   }
 
@@ -293,21 +295,16 @@ void draw_timechanged(unsigned long millis) {
 }
 
 boolean getTouch(void) {
-  // touch screen variables
-  int x, y;
-  boolean touch = false;
 
   if (cts.touched()) {
     TS_Point p = cts.getPoint();
-    // flip coordinate system to match display
-    y = p.x;
-    x = p.y;
-    if (x > 190 && x < 310 && y > 10 && y < 130) {
+
+    // Check the play/pause button was pressed
+    if (p.y > 190 && p.y < 310 && p.x > 10 && p.x < 130) {
       return true;
     }
-  } else {
-    return false;
   }
+  return false;
 }
 
 // Reads the flow sensors and updates the flow rates. A circular buffer is used
