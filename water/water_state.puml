@@ -3,8 +3,8 @@ hide empty description
 
 state waiting {
   waiting: feed\t\toff
-  waiting: pump\toff
   waiting: purge\ton
+  waiting: pump\toff
   waiting: btn\t\tpause
   waiting: /wait idle_time
 }

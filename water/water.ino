@@ -101,7 +101,7 @@ typedef struct btn_control {
 };
 
 btn_control controls[NUM_CONTROLS] = {
-    {"Feed", 6, false}, {"Pump", 7, false}, {"Purge", 5, true}};
+    {"Feed", 6, false}, {"Purge", 7, false}, {"Pump", 5, true}};
 
 // Flow sensors use interrupts to count pulses that are stored in
 // volatile global variables
@@ -126,10 +126,6 @@ typedef struct sensor {
 sensor sensors[NUM_SENSORS] = {
     {"Product", &productFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0},
     {" Waste ", &wasteFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0}};
-
-//
-// Global Variables
-//
 
 // TFT and touch screen
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
@@ -245,9 +241,8 @@ void draw_statechanged(uint16_t fg_colour, char *status) {
   tft.setCursor(10, 160);
   tft.setTextColor(fg_colour, states[stateNow].colour);
   tft.print(status);
-  tft.print(" for");
 
-  // Flow Meter Readings
+  // Button controls
   for (int i = 0; i < NUM_CONTROLS; i++) {
     int padding = (strlen(controls[i].label) == 4) ? 20 : 10;
     uint16_t colour = controls[i].state ? ILI9341_DARKGREEN : ILI9341_RED;
@@ -300,7 +295,7 @@ boolean getTouch(void) {
     TS_Point p = cts.getPoint();
 
     // Check the play/pause button was pressed
-    if (p.y > 190 && p.y < 310 && p.x > 10 && p.x < 130) {
+    if (p.y > 190 && p.x > 85) {
       return true;
     }
   }
