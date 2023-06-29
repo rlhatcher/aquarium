@@ -71,7 +71,7 @@ typedef struct system_state {
 system_state states[NUM_STATES] = {
     {false, true, false, 0xFFE0, WAITING, "Waiting", IDLE_TIME},  // waiting
     {true, true, false, 0x07FF, PRIMING, "Priming", PRIME_TIME},  // priming
-    {true, true, true, 0x001F, RINSING, "Rinsing", RINSE_TIME},   // rinsing
+    {true, true, true, 0xAFE5, RINSING, "Rinsing", RINSE_TIME},   // rinsing
     {true, false, true, 0x07E0, RUNNING, "Running", RUN_TIME}     // running
 };
 
@@ -258,15 +258,21 @@ void draw_statechanged(uint16_t fg_colour, char *status) {
   tft.fillCircle(250, 70, 60, states[icon].colour);
   tft.drawCircle(250, 70, 60, ILI9341_WHITE);
   tft.drawCircle(250, 70, 59, ILI9341_BLACK);
-  if (icon == WAITING) {
+  switch (icon) { 
+  case WAITING:
     tft.fillTriangle(220, 110, 220, 30, 300, 70, ILI9341_BLACK);
     play = true;
-  }
-  if (icon == RUNNING) {
+    break;
+  case RUNNING: 
     tft.fillRoundRect(220, 30, 20, 80, 5, ILI9341_BLACK);
     tft.fillRoundRect(260, 30, 20, 80, 5, ILI9341_BLACK);
     play = false;
+    break;
+  default:  
+    tft.fillTriangle(220, 110, 250, 50, 280, 110, ILI9341_WHITE);
+    tft.fillTriangle(220, 30, 250, 90, 280, 30, ILI9341_WHITE);
   }
+
 }
 
 // Updates the display when the time changes
@@ -281,7 +287,8 @@ void draw_timechanged(unsigned long millis) {
 
   // Format the time
   char buffer[9];
-  snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu", hours, minutes, seconds);
+  snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu", hours, minutes,
+           seconds);
 
   tft.setTextSize(3);
   tft.setCursor(165, 160);
@@ -290,7 +297,6 @@ void draw_timechanged(unsigned long millis) {
 }
 
 boolean getTouch(void) {
-
   if (cts.touched()) {
     TS_Point p = cts.getPoint();
 
@@ -378,21 +384,21 @@ int ringMeter(int value, int vmin, int vmax, int x, int y, int r, char *units) {
       tft.fillTriangle(x0, y0, x1, y1, x2, y2, ILI9341_GREY);
       tft.fillTriangle(x1, y1, x2, y2, x3, y3, ILI9341_GREY);
     }
+    char valuestr[4];
+    sprintf(valuestr, "%03d", value);
+    int pad = 5;
+    int xoffset = x - ((r / 2) - pad);
+
+    tft.setCursor(xoffset, y - pad);
+    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+    tft.setTextSize(2);
+    tft.print(valuestr);  // Print the value
+
+    tft.setCursor(xoffset, y + r);
+    tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+    tft.setTextSize(1);
+    tft.print(units);  // Print the units
   }
-  char valuestr[10];
-  sprintf(valuestr, "%03d", value);
-  int pad = 5;
-  int xoffset = x - ((r / 2) - pad);
-
-  tft.setCursor(xoffset, y - pad);
-  tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-  tft.setTextSize(2);
-  tft.print(valuestr);  // Print the value
-
-  tft.setCursor(xoffset, y + r);
-  tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
-  tft.setTextSize(1);
-  tft.print(units);  // Print the units
 
   // Calculate and return right hand side x coordinate
   return x + r;
