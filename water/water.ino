@@ -124,7 +124,7 @@ typedef struct sensor {
 };
 
 sensor sensors[NUM_SENSORS] = {
-    {"Product", &productFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0},
+    {" Clean ", &productFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0},
     {" Waste ", &wasteFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0}};
 
 // TFT and touch screen
@@ -269,8 +269,10 @@ void draw_statechanged(uint16_t fg_colour, char *status) {
     play = false;
     break;
   default:  
-    tft.fillTriangle(220, 110, 250, 50, 280, 110, ILI9341_WHITE);
-    tft.fillTriangle(220, 30, 250, 90, 280, 30, ILI9341_WHITE);
+    tft.fillTriangle(220, 110, 250, 50, 280, 110, ILI9341_BLACK);
+    tft.fillTriangle(220, 30, 250, 90, 280, 30, ILI9341_BLACK);
+    tft.fillTriangle(223, 107, 250, 55, 277, 107, ILI9341_LIGHTGREY);
+    tft.fillTriangle(223, 33, 250, 85, 277, 33, ILI9341_LIGHTGREY);
   }
 
 }
@@ -336,7 +338,7 @@ void draw_sensors(void) {
       sensors[i].last_milli = now;
 
       tft.setCursor(xp, yp + (rad + gap) * 2);
-      tft.setTextColor(ILI9341_WHITE, ILI9341_PURPLE);
+      tft.setTextColor(ILI9341_BLACK, ILI9341_WHITE);
       tft.setTextSize(2);
       tft.print(sensors[i].label);
 
