@@ -22,7 +22,7 @@
 // used to index the arrays.
 enum event {
   RINSE_NEEDED,  // The system has idled for too long
-  PRIMED,        // The priming function is complete
+  WARMED,        // The warming function is complete
   RINSED,        // The rinsing function is complete
   PAUSE_BTN,     // The pause button was pressed
   PLAY_BTN,      // The play button was pressed
@@ -30,7 +30,7 @@ enum event {
 };
 enum event_time {
   IDLE_TIME,   // RINSE_NEEDED timer
-  PRIME_TIME,  // PRIMED timer
+  WARM_TIME,  // WARMED timer
   RINSE_TIME,  // RINSED timer
   RUN_TIME     // MAX_RUN timer
 };
@@ -39,7 +39,7 @@ enum control {
   PUMP,  // Water pump
   PURGE  // Purge valve for RO membrane
 };
-enum state { WAITING, PRIMING, RINSING, RUNNING };
+enum state { WAITING, WARMING, RINSING, RUNNING };
 
 // event timers manage the transitions between states.
 // the event_times array holds the duration to wait and the
@@ -52,7 +52,7 @@ typedef struct event_timer {
 
 event_timer event_times[NUM_TIMERS] = {
     {0, 6 * MILLI_HOUR, RINSE_NEEDED},  // idle_time
-    {0, 1 * MILLI_MINUTE, PRIMED},      // prime_time
+    {0, 1 * MILLI_MINUTE, WARMED},      // prime_time
     {0, 1 * MILLI_MINUTE, RINSED},      // rinse_time
     {0, 4 * MILLI_HOUR, MAX_RUN}};      // run_time
 
@@ -70,7 +70,7 @@ typedef struct system_state {
 
 system_state states[NUM_STATES] = {
     {false, true, false, 0xFFE0, WAITING, "Waiting", IDLE_TIME},  // waiting
-    {true, true, false, 0x07FF, PRIMING, "Priming", PRIME_TIME},  // priming
+    {true, true, false, 0x07FF, WARMING, "Warming", WARM_TIME},  // priming
     {true, true, true, 0xAFE5, RINSING, "Rinsing", RINSE_TIME},   // rinsing
     {true, false, true, 0x07E0, RUNNING, "Running", RUN_TIME}     // running
 };
@@ -85,11 +85,11 @@ typedef struct system_event {
 };
 
 system_event events[NUM_EVENTS] = {
-    {false, PRIMING},  // rinse_needed
-    {false, RINSING},  // primed
+    {false, WARMING},  // rinse_needed
+    {false, RINSING},  // warmed
     {false, RUNNING},  // rinsed
     {false, RINSING},  // pause_btn
-    {false, PRIMING},  // play_btn
+    {false, WARMING},  // play_btn
     {false, RINSING}   // max_run
 };
 
