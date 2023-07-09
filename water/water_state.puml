@@ -9,11 +9,11 @@ state waiting {
   waiting: /wait idle_time
 }
 
-state priming {
-  priming : feed\t\ton
-  priming : purge\ton
-  priming : pump\toff
-  priming : /wait prime_time
+state warming {
+  warming : feed\t\ton
+  warming : purge\ton
+  warming : pump\toff
+  warming : /wait warming_time
 }
 
 state pumping {
@@ -35,9 +35,9 @@ state pumping {
 }
 
 [*] --> waiting : start
-waiting --> priming : rinse_needed
-waiting --> priming : btn_pressed\n[btn = play]
-priming --> rinsing: primed
+waiting --> warming : rinse_needed
+waiting --> warming : btn_pressed\n[btn = play]
+warming --> rinsing: primed
 rinsing --> stopstart: rinsed
 stopstart --> running : [btn == play]
 running --> rinsing: btn_pressed\n[btn = pause]
