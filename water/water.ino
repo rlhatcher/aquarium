@@ -1,3 +1,5 @@
+#include <SD.h>
+
 #include <Adafruit_FT6206.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
@@ -168,7 +170,7 @@ void setup() {
     digitalWrite(controls[i].pin, controls[i].state);
   }
 
-  // Initialise alarms to default state
+  // Initialise alarms to current value
   for (int i = 0; i < NUM_ALARMS; i++) {
     pinMode(alarms[i].pin, INPUT);
     alarms[i].state = digitalRead(alarms[i].pin);

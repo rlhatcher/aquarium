@@ -18,6 +18,7 @@
             "includePath": [
                 "/Users/ron/Library/Arduino15/packages/arduino/hardware/avr/1.8.6/cores/arduino",
                 "/Users/ron/Library/Arduino15/packages/arduino/hardware/avr/1.8.6/variants/standard",
+                "/Users/ron/Documents/Arduino/libraries/SD/src",
                 "/Users/ron/Documents/Arduino/libraries/Adafruit_FT6206_Library",
                 "/Users/ron/Library/Arduino15/packages/arduino/hardware/avr/1.8.6/libraries/Wire/src",
                 "/Users/ron/Documents/Arduino/libraries/Adafruit_GFX_Library",
