@@ -7,6 +7,7 @@
 
 #define NUM_CONTROLS 3  // number of push buttons
 #define NUM_SENSORS 2   // number of flow sensors
+#define NUM_ALARMS 1    // number of alarms
 #define NUM_STATES 4    // number of system states
 #define NUM_TIMERS 4    // number of event timers
 #define NUM_EVENTS 6    // number of events
@@ -40,6 +41,7 @@ enum control {
   PURGE  // Purge valve for RO membrane
 };
 enum state { WAITING, WARMING, RINSING, RUNNING };
+enum alarm { TANK_FULL };
 
 // event timers manage the transitions between states.
 // the event_times array holds the duration to wait and the
@@ -103,6 +105,15 @@ typedef struct btn_control {
 btn_control controls[NUM_CONTROLS] = {
     {"Feed", 6, false}, {"Purge", 7, false}, {"Pump", 5, true}};
 
+// Alarm inputs
+typedef struct alarm_input {
+  char *label;
+  int pin;
+  boolean state;
+};
+
+alarm_input alarms[NUM_ALARMS] = {{"Tank Full", 8, false}};
+
 // Flow sensors use interrupts to count pulses that are stored in
 // volatile global variables
 volatile unsigned long productFlowCounter = 0;
@@ -157,6 +168,12 @@ void setup() {
     digitalWrite(controls[i].pin, controls[i].state);
   }
 
+  // Initialise alarms to default state
+  for (int i = 0; i < NUM_ALARMS; i++) {
+    pinMode(alarms[i].pin, INPUT);
+    alarms[i].state = digitalRead(alarms[i].pin);
+  }
+
   // Start the TFT and rotate 90 degrees
   tft.begin();
   tft.setRotation(3);
@@ -181,7 +198,14 @@ void loop() {
     start = false;
   }
 
-  // Get any external events
+  // Check for any alarms
+  // since we only have 1 right now, we can just check the pin
+  if (digitalRead(alarms[TANK_FULL].pin)) {
+    Serial.println("Tank full");
+    stateNow = WAITING;
+    stateChanged = true;
+  }
+   // Get any external events
   if (getTouch()) {
     events[(play) ? PLAY_BTN : PAUSE_BTN].active = true;
   }
