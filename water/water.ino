@@ -117,15 +117,15 @@ typedef struct sensor {
   unsigned long last_count;
   unsigned long last_milli;
   float flow;
-  float flow_avg;
+  float flow_target;
   float flow_sum;
   float flow_rates[AVERAGE_PERIOD];  // buffer to store flow rates for averaging
   int buffer_idx;
 };
 
 sensor sensors[NUM_SENSORS] = {
-    {" Clean ", &productFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0},
-    {" Waste ", &wasteFlowCounter, 0, 0, 0.0, 0.0, 0.0, {0}, 0}};
+    {" Clean ", &productFlowCounter, 0, 0, 0.0, 250.0, 0.0, {0}, 0},
+    {" Waste ", &wasteFlowCounter, 0, 0, 0.0, 800.0, 0.0, {0}, 0}};
 
 // TFT and touch screen
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
@@ -326,13 +326,13 @@ void draw_sensors(void) {
     unsigned long dTime = now - sensors[i].last_milli;
 
     if (dTime >= 1000) {
-      sensors[i].flow = ((dCount / 58.800) / ((float)dTime * 60000));
+      sensors[i].flow = dCount;
       sensors[i].flow_rates[sensors[i].buffer_idx] = sensors[i].flow;
       sensors[i].flow_sum = 0;
       for (int j = 0; j < AVERAGE_PERIOD; j++) {
         sensors[i].flow_sum += sensors[i].flow_rates[j];
       }
-      sensors[i].flow_avg = sensors[i].flow_sum / AVERAGE_PERIOD;
+      int flow_avg = sensors[i].flow_sum / AVERAGE_PERIOD;
       sensors[i].buffer_idx = (sensors[i].buffer_idx + 1) % AVERAGE_PERIOD;
       sensors[i].last_count = pulseCount;
       sensors[i].last_milli = now;
@@ -342,7 +342,7 @@ void draw_sensors(void) {
       tft.setTextSize(2);
       tft.print(sensors[i].label);
 
-      xp = gap + ringMeter(sensors[i].flow_avg, 0, 40, xp, yp, rad, "ml/min");
+      xp = gap + ringMeter(flow_avg, 0, sensors[i].flow_target, xp, yp, rad, "ml/min");
     }
   }
 }
