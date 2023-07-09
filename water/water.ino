@@ -7,6 +7,7 @@
 
 #define NUM_CONTROLS 3  // number of push buttons
 #define NUM_SENSORS 2   // number of flow sensors
+#define NUM_ALARMS 1    // number of alarms
 #define NUM_STATES 4    // number of system states
 #define NUM_TIMERS 4    // number of event timers
 #define NUM_EVENTS 6    // number of events
@@ -22,7 +23,7 @@
 // used to index the arrays.
 enum event {
   RINSE_NEEDED,  // The system has idled for too long
-  PRIMED,        // The priming function is complete
+  WARMED,        // The warming function is complete
   RINSED,        // The rinsing function is complete
   PAUSE_BTN,     // The pause button was pressed
   PLAY_BTN,      // The play button was pressed
@@ -30,7 +31,7 @@ enum event {
 };
 enum event_time {
   IDLE_TIME,   // RINSE_NEEDED timer
-  PRIME_TIME,  // PRIMED timer
+  WARM_TIME,  // WARMED timer
   RINSE_TIME,  // RINSED timer
   RUN_TIME     // MAX_RUN timer
 };
@@ -39,7 +40,8 @@ enum control {
   PUMP,  // Water pump
   PURGE  // Purge valve for RO membrane
 };
-enum state { WAITING, PRIMING, RINSING, RUNNING };
+enum state { WAITING, WARMING, RINSING, RUNNING };
+enum alarm { TANK_FULL };
 
 // event timers manage the transitions between states.
 // the event_times array holds the duration to wait and the
@@ -52,7 +54,7 @@ typedef struct event_timer {
 
 event_timer event_times[NUM_TIMERS] = {
     {0, 6 * MILLI_HOUR, RINSE_NEEDED},  // idle_time
-    {0, 1 * MILLI_MINUTE, PRIMED},      // prime_time
+    {0, 1 * MILLI_MINUTE, WARMED},      // prime_time
     {0, 1 * MILLI_MINUTE, RINSED},      // rinse_time
     {0, 4 * MILLI_HOUR, MAX_RUN}};      // run_time
 
@@ -70,7 +72,7 @@ typedef struct system_state {
 
 system_state states[NUM_STATES] = {
     {false, true, false, 0xFFE0, WAITING, "Waiting", IDLE_TIME},  // waiting
-    {true, true, false, 0x07FF, PRIMING, "Priming", PRIME_TIME},  // priming
+    {true, true, false, 0x07FF, WARMING, "Warming", WARM_TIME},  // priming
     {true, true, true, 0xAFE5, RINSING, "Rinsing", RINSE_TIME},   // rinsing
     {true, false, true, 0x07E0, RUNNING, "Running", RUN_TIME}     // running
 };
@@ -85,11 +87,11 @@ typedef struct system_event {
 };
 
 system_event events[NUM_EVENTS] = {
-    {false, PRIMING},  // rinse_needed
-    {false, RINSING},  // primed
+    {false, WARMING},  // rinse_needed
+    {false, RINSING},  // warmed
     {false, RUNNING},  // rinsed
     {false, RINSING},  // pause_btn
-    {false, PRIMING},  // play_btn
+    {false, WARMING},  // play_btn
     {false, RINSING}   // max_run
 };
 
@@ -102,6 +104,15 @@ typedef struct btn_control {
 
 btn_control controls[NUM_CONTROLS] = {
     {"Feed", 6, false}, {"Purge", 7, false}, {"Pump", 5, true}};
+
+// Alarm inputs
+typedef struct alarm_input {
+  char *label;
+  int pin;
+  boolean state;
+};
+
+alarm_input alarms[NUM_ALARMS] = {{"Tank Full", 8, false}};
 
 // Flow sensors use interrupts to count pulses that are stored in
 // volatile global variables
@@ -157,6 +168,12 @@ void setup() {
     digitalWrite(controls[i].pin, controls[i].state);
   }
 
+  // Initialise alarms to default state
+  for (int i = 0; i < NUM_ALARMS; i++) {
+    pinMode(alarms[i].pin, INPUT);
+    alarms[i].state = digitalRead(alarms[i].pin);
+  }
+
   // Start the TFT and rotate 90 degrees
   tft.begin();
   tft.setRotation(3);
@@ -181,7 +198,14 @@ void loop() {
     start = false;
   }
 
-  // Get any external events
+  // Check for any alarms
+  // since we only have 1 right now, we can just check the pin
+  if (digitalRead(alarms[TANK_FULL].pin)) {
+    Serial.println("Tank full");
+    stateNow = WAITING;
+    stateChanged = true;
+  }
+   // Get any external events
   if (getTouch()) {
     events[(play) ? PLAY_BTN : PAUSE_BTN].active = true;
   }
