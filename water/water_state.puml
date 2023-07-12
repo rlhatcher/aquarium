@@ -30,19 +30,28 @@ state running {
   running: btn\t\tplay
   running: /wait cycle_time
 }
-state stopstart <<choice>>
 
-[*] --> waiting : start
+state full {
+  full: feed\t\toff
+  full: purge\ton
+  full: pump\toff
+  full: btn\t\tstop
+  full: /wait check_interval
+}
+state stopstart <<choice>>
+state tank_full <<start>>
+[*] --> waiting : power
 
 waiting --> warming : rinse_needed
 waiting --> warming : btn_pressed\n[btn = play]
-warming --> rinsing: primed
+warming --> rinsing: warmed
 rinsing --> stopstart: rinsed
 stopstart --> running : [btn == play]
 running --> rinsing: btn_pressed\n[btn = pause]
 stopstart--> waiting : [btn == pause]
 running --> rinsing: cycle
-running --> waiting: tank_full
-note on link : Shown from running\nstate but can trigger\nat any point
+tank_full --> full: tank_full
+full --> waiting: tank_clear
+full --> full: tank_check
 
 @enduml

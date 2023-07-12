@@ -1,5 +1,5 @@
 {
     "sketch": "water/water.ino",
     "board": "arduino:avr:uno",
-    "port": "/dev/tty.usbmodem214401"
+    "port": "/dev/tty.usbmodem214201"
 }

@@ -1,5 +1,3 @@
-#include <SD.h>
-
 #include <Adafruit_FT6206.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
@@ -10,9 +8,9 @@
 #define NUM_CONTROLS 3  // number of push buttons
 #define NUM_SENSORS 2   // number of flow sensors
 #define NUM_ALARMS 1    // number of alarms
-#define NUM_STATES 4    // number of system states
-#define NUM_TIMERS 4    // number of event timers
-#define NUM_EVENTS 6    // number of events
+#define NUM_STATES 5    // number of system states
+#define NUM_TIMERS 5    // number of event timers
+#define NUM_EVENTS 8    // number of events
 
 #define AVERAGE_PERIOD 60  // number of seconds for flow average
 
@@ -29,20 +27,23 @@ enum event {
   RINSED,        // The rinsing function is complete
   PAUSE_BTN,     // The pause button was pressed
   PLAY_BTN,      // The play button was pressed
-  MAX_RUN        // The maximum run time has been reached
+  MAX_RUN,       // The maximum run time has been reached
+  TANK_CLEAR,    // The tank is now empty
+  TANK_CHECK     // Check if the tank is now empty
 };
 enum event_time {
-  IDLE_TIME,   // RINSE_NEEDED timer
-  WARM_TIME,  // WARMED timer
-  RINSE_TIME,  // RINSED timer
-  RUN_TIME     // MAX_RUN timer
+  IDLE_TIME,      // RINSE_NEEDED timer
+  WARM_TIME,      // WARMED timer
+  RINSE_TIME,     // RINSED timer
+  RUN_TIME,       // MAX_RUN timer
+  CHECK_INTERVAL  // TANK_CLEAR check timer
 };
 enum control {
-  FEED,  // Water feed valve from pump
-  PUMP,  // Water pump
-  PURGE  // Purge valve for RO membrane
+  FEED,   // Water feed valve from pump
+  PURGE,  // Purge valve for RO membrane
+  PUMP    // Water pump
 };
-enum state { WAITING, WARMING, RINSING, RUNNING };
+enum state { WAITING, WARMING, RINSING, RUNNING, FULL };
 enum alarm { TANK_FULL };
 
 // event timers manage the transitions between states.
@@ -58,14 +59,16 @@ event_timer event_times[NUM_TIMERS] = {
     {0, 6 * MILLI_HOUR, RINSE_NEEDED},  // idle_time
     {0, 1 * MILLI_MINUTE, WARMED},      // prime_time
     {0, 1 * MILLI_MINUTE, RINSED},      // rinse_time
-    {0, 4 * MILLI_HOUR, MAX_RUN}};      // run_time
+    {0, 4 * MILLI_HOUR, MAX_RUN},       // run_time
+    {0, 1 * MILLI_MINUTE, TANK_CHECK}   // tank_time
+};
 
 // System states manage the control states, display settings,
 // and associated timers. The states array defines the state model
 typedef struct system_state {
   boolean feed;  // control states
-  boolean pump;
   boolean purge;
+  boolean pump;
   uint16_t colour;  // display settings
   state icon;
   char *label;
@@ -73,10 +76,11 @@ typedef struct system_state {
 };
 
 system_state states[NUM_STATES] = {
-    {false, true, false, 0xFFE0, WAITING, "Waiting", IDLE_TIME},  // waiting
-    {true, true, false, 0x07FF, WARMING, "Warming", WARM_TIME},  // priming
-    {true, true, true, 0xAFE5, RINSING, "Rinsing", RINSE_TIME},   // rinsing
-    {true, false, true, 0x07E0, RUNNING, "Running", RUN_TIME}     // running
+    {false, true, false, 0xFFE0, WAITING, "Waiting", IDLE_TIME},    // waiting
+    {true, true, false, 0x07FF, WARMING, "Warming", WARM_TIME},     // priming
+    {true, true, true, 0xAFE5, RINSING, "Rinsing", RINSE_TIME},     // rinsing
+    {true, false, true, 0x07E0, RUNNING, "Running", RUN_TIME},      // running
+    {false, true, false, 0xF800, FULL, "**Tank**", CHECK_INTERVAL}  // full
 };
 
 state stateNow = WAITING;  // TODO: change to local scope?
@@ -94,7 +98,9 @@ system_event events[NUM_EVENTS] = {
     {false, RUNNING},  // rinsed
     {false, RINSING},  // pause_btn
     {false, WARMING},  // play_btn
-    {false, RINSING}   // max_run
+    {false, RINSING},  // max_run
+    {false, WAITING},  // tank_clear
+    {false, FULL}      // tank_check
 };
 
 // Push button controls
@@ -200,16 +206,20 @@ void loop() {
     start = false;
   }
 
-  // Check for any alarms
-  // since we only have 1 right now, we can just check the pin
-  if (digitalRead(alarms[TANK_FULL].pin)) {
+  // External event processing
+
+  // Check for any physical alarm changes and one-time trip them
+  // since we only have 1, we can just check the pin
+  if (digitalRead(alarms[TANK_FULL].pin) && !alarms[TANK_FULL].state) {
     Serial.println("Tank full");
-    stateNow = WAITING;
+    alarms[TANK_FULL].state = true;
+    stateNow = FULL;
     stateChanged = true;
-  }
-   // Get any external events
-  if (getTouch()) {
-    events[(play) ? PLAY_BTN : PAUSE_BTN].active = true;
+  } else {
+    // Touchscreen presses are ignored if we have an alarm tripped
+    if (getTouch()) {
+      events[(play) ? PLAY_BTN : PAUSE_BTN].active = true;
+    }
   }
 
   // Handle the rinsed transition guard conditions
@@ -217,6 +227,16 @@ void loop() {
     stateNow = (play) ? RUNNING : WAITING;
     stateChanged = true;
     events[RINSED].active = false;
+  }
+
+  // Handle the tank_check transition
+  if (events[TANK_CHECK].active) {
+    if (digitalRead(alarms[TANK_FULL].pin) == false) {
+      stateNow = WAITING;
+      stateChanged = true;
+      alarms[TANK_FULL].state = false;
+      events[TANK_CHECK].active = false;
+    }
   }
 
   // Transition active events to their target state
@@ -284,23 +304,22 @@ void draw_statechanged(uint16_t fg_colour, char *status) {
   tft.fillCircle(250, 70, 60, states[icon].colour);
   tft.drawCircle(250, 70, 60, ILI9341_WHITE);
   tft.drawCircle(250, 70, 59, ILI9341_BLACK);
-  switch (icon) { 
-  case WAITING:
-    tft.fillTriangle(220, 110, 220, 30, 300, 70, ILI9341_BLACK);
-    play = true;
-    break;
-  case RUNNING: 
-    tft.fillRoundRect(220, 30, 20, 80, 5, ILI9341_BLACK);
-    tft.fillRoundRect(260, 30, 20, 80, 5, ILI9341_BLACK);
-    play = false;
-    break;
-  default:  
-    tft.fillTriangle(220, 110, 250, 50, 280, 110, ILI9341_BLACK);
-    tft.fillTriangle(220, 30, 250, 90, 280, 30, ILI9341_BLACK);
-    tft.fillTriangle(223, 107, 250, 55, 277, 107, ILI9341_LIGHTGREY);
-    tft.fillTriangle(223, 33, 250, 85, 277, 33, ILI9341_LIGHTGREY);
+  switch (icon) {
+    case WAITING:
+      tft.fillTriangle(220, 110, 220, 30, 300, 70, ILI9341_BLACK);
+      play = true;
+      break;
+    case RUNNING:
+      tft.fillRoundRect(220, 30, 20, 80, 5, ILI9341_BLACK);
+      tft.fillRoundRect(260, 30, 20, 80, 5, ILI9341_BLACK);
+      play = false;
+      break;
+    default:
+      tft.fillTriangle(220, 110, 250, 50, 280, 110, ILI9341_BLACK);
+      tft.fillTriangle(220, 30, 250, 90, 280, 30, ILI9341_BLACK);
+      tft.fillTriangle(223, 107, 250, 55, 277, 107, ILI9341_LIGHTGREY);
+      tft.fillTriangle(223, 33, 250, 85, 277, 33, ILI9341_LIGHTGREY);
   }
-
 }
 
 // Updates the display when the time changes
@@ -368,7 +387,8 @@ void draw_sensors(void) {
       tft.setTextSize(2);
       tft.print(sensors[i].label);
 
-      xp = gap + ringMeter(flow_avg, 0, sensors[i].flow_target, xp, yp, rad, "ml/min");
+      xp = gap + ringMeter(flow_avg, 0, sensors[i].flow_target, xp, yp, rad,
+                           "ml/min");
     }
   }
 }
