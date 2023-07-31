@@ -148,8 +148,8 @@ typedef struct sensor {
 // 5880 ticks / litre
 
 sensor sensors[NUM_SENSORS] = {
-    {" Clean ", &productFlowCounter, 0, 0, 140.0, {0}, 0},
-    {" Waste ", &wasteFlowCounter, 0, 0, 420.0, {0}, 0}};
+    {" Clean ", &productFlowCounter, 0, 0, 150.0, {0}, 0},
+    {" Waste ", &wasteFlowCounter, 0, 0, 450.0, {0}, 0}};
 
 // TFT and touch screen
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
@@ -438,6 +438,7 @@ int ringMeter(int value, int vmin, int vmax, int x, int y, int r, char *units) {
       tft.fillTriangle(x1, y1, x2, y2, x3, y3, ILI9341_GREY);
     }
     char valuestr[4];
+    value = (value < 1000) ? value : 999;
     sprintf(valuestr, "%03d", value);
     int pad = 5;
     int xoffset = x - ((r / 2) - pad);
