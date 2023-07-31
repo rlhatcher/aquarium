@@ -13,6 +13,10 @@
 #define NUM_EVENTS 8    // number of events
 
 #define AVERAGE_PERIOD 60  // number of seconds for flow average
+// Flow rates are stored as ticks / second where 1 tick = .588 litres
+// factors: mL/min 10.20408 mL/hour 612.2448 L/hour 0.6122448
+
+#define FLOW_FACTOR 10.20408  
 
 #define ILI9341_GREY 0x2104  // Dark grey 16 bit colour
 #define MILLI_HOUR 3600000   // One hour in milliseconds
@@ -136,13 +140,16 @@ typedef struct sensor {
   unsigned long last_count;
   unsigned long last_milli;
   float flow_target;
-  float flow_rates[AVERAGE_PERIOD];  // buffer to store flow rates for averaging
+  float flow_rates[AVERAGE_PERIOD];  // flow rate in ticks/second
   int buffer_idx;
 };
 
+// ticks/second
+// 5880 ticks / litre
+
 sensor sensors[NUM_SENSORS] = {
-    {" Clean ", &productFlowCounter, 0, 0, 250.0, {0}, 0},
-    {" Waste ", &wasteFlowCounter, 0, 0, 800.0, {0}, 0}};
+    {" Clean ", &productFlowCounter, 0, 0, 140.0, {0}, 0},
+    {" Waste ", &wasteFlowCounter, 0, 0, 420.0, {0}, 0}};
 
 // TFT and touch screen
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
@@ -375,6 +382,8 @@ void draw_sensors(void) {
       for (int j = 0; j < AVERAGE_PERIOD; j++) {
         sum += sensors[i].flow_rates[j];
       }
+      int flow_now = (sum / AVERAGE_PERIOD) * FLOW_FACTOR;
+
       sensors[i].buffer_idx = (sensors[i].buffer_idx + 1) % AVERAGE_PERIOD;
       sensors[i].last_count = pulseCount;
       sensors[i].last_milli = now;
@@ -384,8 +393,7 @@ void draw_sensors(void) {
       tft.setTextSize(2);
       tft.print(sensors[i].label);
 
-      xp = gap + ringMeter(sum / AVERAGE_PERIOD, 0, sensors[i].flow_target, xp,
-                           yp, rad, "ml/min");
+      xp = gap + ringMeter(flow_now, 0, sensors[i].flow_target, xp, yp, rad, "mL/min");
     }
   }
 }
