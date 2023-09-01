@@ -60,9 +60,9 @@ typedef struct event_timer {
 };
 
 event_timer event_times[NUM_TIMERS] = {
-    {0, 6 * MILLI_HOUR, RINSE_NEEDED},  // idle_time
+    {0, 2 * MILLI_HOUR, RINSE_NEEDED},  // idle_time
     {0, 1 * MILLI_MINUTE, WARMED},      // prime_time
-    {0, 1 * MILLI_MINUTE, RINSED},      // rinse_time
+    {0, 5 * MILLI_MINUTE, RINSED},      // rinse_time
     {0, 4 * MILLI_HOUR, MAX_RUN},       // run_time
     {0, 1 * MILLI_MINUTE, TANK_CHECK}   // tank_time
 };
@@ -148,8 +148,8 @@ typedef struct sensor {
 // 5880 ticks / litre
 
 sensor sensors[NUM_SENSORS] = {
-    {" Clean ", &productFlowCounter, 0, 0, 150.0, {0}, 0},
-    {" Waste ", &wasteFlowCounter, 0, 0, 450.0, {0}, 0}};
+    {" Clean ", &productFlowCounter, 0, 0, 125.0, {0}, 0},
+    {" Waste ", &wasteFlowCounter, 0, 0, 440.0, {0}, 0}};
 
 // TFT and touch screen
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);

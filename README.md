@@ -1,2 +1,2 @@
-# aquarium
- Aquarium related things
+# Water manager
+
